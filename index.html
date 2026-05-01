@@ -1,0 +1,832 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>CANVAS — Academia de Dibujo y Pintura</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+<style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:'Segoe UI',system-ui,sans-serif;background:#EEF5FF;color:#1B2D50}input,select,button{font-family:inherit}</style>
+</head>
+<body><div id="root"></div>
+<script type="text/babel">
+const {useState,useMemo,useRef}=React;
+const C={mostaza:"#E9A800",azulC:"#6FC2D8",azulO:"#2350A0",bg:"#EEF5FF",card:"#FFFFFF",text:"#1B2D50",muted:"#7A92B0",border:"#C5DDF2"};
+const TM={Luz:{c:"#E9A800",bg:"#FFF8D5",tx:"#6a3800"},Sonia:{c:"#2350A0",bg:"#E5EEFF",tx:"#12296a"},Magaly:{c:"#6FC2D8",bg:"#DFF5FC",tx:"#085868"},Patry:{c:"#9B59B6",bg:"#F0E8FA",tx:"#5a1580"},Inge:{c:"#1FA060",bg:"#E0F7EC",tx:"#0a4a28"},"?":{c:"#999",bg:"#f0f0f0",tx:"#555"}};
+const MN=["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
+const DNF=["Domingo","Lunes","Martes","Miércoles","Jueves","Viernes","Sábado"];
+const DL=["Lun","Mar","Mié","Jue","Vie","Sáb","Dom"];
+const TEACHERS=["Luz","Sonia","Magaly","Patry","Inge"];
+const MAX=8;
+const NOW=new Date(), CM=NOW.getMonth()+1, CY=NOW.getFullYear();
+const pk=(e,y,m)=>`${e}__${y}__${m}`;
+
+const INIT_USERS={
+  'direccion@canvas.es':{pw:'canvas2026',role:'ceo',displayName:'Directora'},
+  'luz@canvas.es':{pw:'luz2026',role:'teacher',displayName:'Luz',teacher:'Luz'},
+  'sonia@canvas.es':{pw:'sonia2026',role:'teacher',displayName:'Sonia',teacher:'Sonia'},
+  'magaly@canvas.es':{pw:'magaly2026',role:'teacher',displayName:'Magaly',teacher:'Magaly'},
+  'patry@canvas.es':{pw:'patry2026',role:'teacher',displayName:'Patry',teacher:'Patry'},
+  'inge@canvas.es':{pw:'inge2026',role:'teacher',displayName:'Inge',teacher:'Inge'},
+  'ana@demo.es':{pw:'demo123',role:'student',displayName:'Ana G.',groupId:3,fee:50,paymentType:'monthly'},
+  'carlos@demo.es':{pw:'demo123',role:'student',displayName:'Carlos L.',groupId:6,fee:50,paymentType:'quarterly'},
+  'maria@demo.es':{pw:'demo123',role:'student',displayName:'María M.',groupId:10,fee:40,paymentType:'monthly'},
+};
+
+const INIT_GROUPS=[
+  {id:1,name:"Aerografía",day:1,time:"17:00",end:"19:00",teacher:"Luz",level:"",fee:50,students:["Carmen Gallego Martín","Jacoba López Alonso"]},
+  {id:2,name:"Aerografía",day:1,time:"19:00",end:"21:00",teacher:"Luz",level:"",fee:50,students:["Loreto García","Rosa Rico Fernández","Belén Benito Pérez","José Luis Pérez","Resu Jiménez","Amaya Juánez Catalina"]},
+  {id:3,name:"Arte Textil",day:2,time:"11:30",end:"13:30",teacher:"Sonia",level:"",fee:50,students:["Ana González","Amparo Ortega","María del Carmen Álvarez","Elisa Toquero","Isabel Fernández","Adriana Sánchez","María San Miguel","Matías Borrajo"]},
+  {id:4,name:"Pintura Infantil",day:2,time:"17:00",end:"18:00",teacher:"Sonia",level:"4-8 años",fee:40,students:["Maia Marques","Manuela Palmero","Mateo Ruiz","Nahia Cortegoso","Gala Alonso"]},
+  {id:5,name:"Pintura Juvenil",day:2,time:"18:00",end:"19:30",teacher:"Sonia",level:"9-13 años",fee:50,students:["Andrea Delgado","María López","Natalia Pérez","Inés Quintana","Irene Ruiz","Martín Gómez","Vera Muñoz"]},
+  {id:6,name:"Pintura Adultos",day:2,time:"19:30",end:"21:00",teacher:"Sonia",level:"",fee:50,students:["David Barrio","Mónica González","Aarón de Sancho","Silvia Gómez","Nora Cordeiro","Susana Martín","Isabel Ortega","Silvia Sanz"]},
+  {id:7,name:"Acuarela Intermedio",day:2,time:"19:30",end:"21:00",teacher:"Patry",level:"",fee:50,students:[]},
+  {id:8,name:"Acuarela Intermedio",day:3,time:"11:00",end:"12:30",teacher:"?",level:"",fee:50,students:[]},
+  {id:9,name:"Arte Textil",day:3,time:"17:00",end:"19:00",teacher:"Luz",level:"",fee:50,students:[]},
+  {id:10,name:"Pintura Infantil",day:3,time:"17:00",end:"18:00",teacher:"Luz",level:"4-8 años",fee:40,students:["Silvia Pérez","Elliot García","Leo","Lucas","Zoe Alonso","Marcos Calaveras","Laia Ramos Vidal"]},
+  {id:11,name:"Pintura Adultos",day:3,time:"18:00",end:"19:30",teacher:"Luz",level:"",fee:50,students:["Daniela Mate","Mercedes Castellanos","María Isabel Macías","Charo Castellanos","María Rodríguez López","Loreto García","Belén Benito Pérez"]},
+  {id:12,name:"Pintura Adultos",day:3,time:"19:30",end:"21:00",teacher:"Luz",level:"",fee:50,students:["María de Pedro","Ana Lucía Valencia","Ana Sofía Díez","Lucía Lozano Mínguez","Miguel Ángel Rodríguez","María Arroyo Hernando","Cristina Tapia"]},
+  {id:13,name:"Pintura Adultos",day:4,time:"11:00",end:"12:30",teacher:"Sonia",level:"",fee:50,students:["Maria del Valle","Daniel Martín","Alexandra Abreu"]},
+  {id:14,name:"Pintura Juvenil",day:4,time:"17:00",end:"18:00",teacher:"Sonia",level:"9-13 años",fee:50,students:["Martín Álvarez","Emily Mara","Agustina Bustos","Emma González","Silvia Pérez","Paula Benavente","Olaya Miano"]},
+  {id:15,name:"Manos Creativas",day:4,time:"17:00",end:"18:00",teacher:"Inge",level:"4-6 años",fee:40,students:["Gala Alonso","Berta Ruano","Candela Rascón","Alba Alfageme","Valentina Villar","Lara de Manuel"]},
+  {id:16,name:"Pintura Adultos",day:4,time:"18:00",end:"19:30",teacher:"Sonia",level:"",fee:50,students:["Marta Ayala","Elise Rembliere","María Cifuentes","Sofía Cifuentes","Nicolás Martín","Lourdes Benito","Alicia Torrijos"]},
+  {id:17,name:"Arte Textil",day:4,time:"18:00",end:"19:30",teacher:"Inge",level:"",fee:50,students:["Daniela López","Matías","Bruno Orobón","Arturo Coullaut","Martín Fernández","Judit Gaíl","Noa Pradier","Eloy Domínguez"]},
+  {id:18,name:"Pintura Adultos",day:4,time:"19:30",end:"21:00",teacher:"Sonia",level:"",fee:50,students:["Lucía García","Paula Collantes","Pablo Yllera","Ester Abad","Pilar Fernández","Macarena Vielba"]},
+  {id:19,name:"Pintura Infantil",day:5,time:"17:00",end:"18:00",teacher:"Magaly",level:"4-8 años",fee:40,students:["Nerea Álvarez","Eva Murciego","Ema Wix","Emma González","Alejandra Gutiérrez","Valentina Utrera","Isabel Fernández"]},
+  {id:20,name:"Pintura Juvenil",day:5,time:"18:00",end:"19:30",teacher:"Magaly",level:"9-13 años",fee:50,students:["Carlota","Daniela","Vera","Celia","Iván","María López"]},
+];
+
+const INIT_PAYMENTS={
+  [pk('ana@demo.es',CY,CM)]:{status:'validated',filename:'transferencia_abril.pdf',amount:50,uploadDate:'2026-04-02',validatedDate:'2026-04-03'},
+  [pk('carlos@demo.es',CY,CM)]:{status:'uploaded',filename:'pago_cuota_abril.pdf',amount:50,uploadDate:'2026-04-04'},
+  [pk('maria@demo.es',CY,CM)]:{status:'pending',amount:40},
+};
+
+const genExpenses=()=>{
+  const base=[{concept:'Alquiler local',amount:1200},{concept:'Profesoras',amount:2000},{concept:'Material',amount:280},{concept:'Seguros',amount:150}];
+  const items=[];let id=1;
+  [[10,2025],[11,2025],[12,2025],[1,2026],[2,2026],[3,2026],[CM,CY]].forEach(([m,y])=>base.forEach(e=>items.push({id:id++,...e,month:m,year:y})));
+  return items;
+};
+
+// ─── LOGO ───────────────────────────────────────────────────────────────────
+function Logo({s=36}){return(
+  <svg width={s} height={s} viewBox="0 0 100 100">
+    <defs><clipPath id="cc"><circle cx="50" cy="50" r="47"/></clipPath></defs>
+    <circle cx="50" cy="50" r="47" fill="#2350A0"/>
+    <ellipse cx="68" cy="36" rx="34" ry="34" fill="#E9A800" clipPath="url(#cc)"/>
+    <circle cx="50" cy="50" r="47" fill="none" stroke="white" strokeWidth="3.5"/>
+    <rect x="47" y="22" width="7" height="30" rx="3" fill="white" transform="rotate(25 50 50)"/>
+    <polygon points="50,74 46,83 54,83" fill="#6FC2D8" transform="rotate(25 50 50)"/>
+    <text x="50" y="58" textAnchor="middle" fill="white" fontSize="15" fontWeight="900" fontFamily="Arial Black,Arial,sans-serif" letterSpacing="1.5">CANVAS</text>
+  </svg>
+);}
+
+// ─── APP ────────────────────────────────────────────────────────────────────
+function App(){
+  const [users,setUsers]=useState(INIT_USERS);
+  const [groups,setGroups]=useState(INIT_GROUPS);
+  const [sessions,setSessions]=useState({});
+  const [payments,setPayments]=useState(INIT_PAYMENTS);
+  const [expenses,setExpenses]=useState(genExpenses());
+  const [user,setUser]=useState(null);
+  const [showReg,setShowReg]=useState(false);
+
+  const login=(email,pw)=>{const u=users[email.toLowerCase()];if(!u)return"Email no encontrado";if(u.pw!==pw)return"Contraseña incorrecta";setUser({email:email.toLowerCase(),...u});return null;};
+
+  const register=(data)=>{
+    const email=data.email.toLowerCase();
+    if(users[email])return"Este email ya está registrado";
+    const pw=Math.random().toString(36).slice(2,8).toUpperCase();
+    const gid=parseInt(data.groupId), grp=groups.find(g=>g.id===gid);
+    const nu={pw,role:'student',displayName:data.displayName,groupId:gid,fee:grp?.fee||50,paymentType:data.paymentType};
+    setUsers(p=>({...p,[email]:nu}));
+    if(grp&&grp.students.length<MAX) setGroups(p=>p.map(g=>g.id===gid?{...g,students:[...g.students,data.displayName]}:g));
+    return{pw,email};
+  };
+
+  const validatePayment=key=>setPayments(p=>({...p,[key]:{...p[key],status:'validated',validatedDate:new Date().toISOString().split('T')[0]}}));
+  const uploadPayment=(email,filename,amount)=>{const key=pk(email,CY,CM);setPayments(p=>({...p,[key]:{status:'uploaded',filename,amount,uploadDate:new Date().toISOString().split('T')[0]}}));};
+
+  if(!user)return<LoginScreen onLogin={login} onRegister={register} showReg={showReg} setShowReg={setShowReg} groups={groups}/>;
+  const props={user,users,groups,setGroups,sessions,setSessions,payments,expenses,setExpenses,validatePayment,uploadPayment,onLogout:()=>setUser(null)};
+  if(user.role==='ceo')return<CEOApp {...props}/>;
+  if(user.role==='teacher')return<TeacherApp {...props}/>;
+  return<StudentApp {...props}/>;
+}
+
+// ─── LOGIN ───────────────────────────────────────────────────────────────────
+function LoginScreen({onLogin,onRegister,showReg,setShowReg,groups}){
+  const [email,setEmail]=useState(''),  [pw,setPw]=useState(''), [err,setErr]=useState(''), [newPw,setNewPw]=useState(null);
+  const [rf,setRf]=useState({displayName:'',email:'',groupId:groups.find(g=>g.students.length<MAX)?.id||1,paymentType:'monthly'});
+  const doLogin=()=>{const e=onLogin(email,pw);if(e)setErr(e);};
+  const doReg=()=>{if(!rf.displayName.trim()||!rf.email.trim()){setErr("Completa todos los campos");return;}const r=onRegister(rf);if(typeof r==='string'){setErr(r);return;}setNewPw(r);};
+  const s={inp:{width:"100%",padding:"10px 14px",background:C.bg,border:`1px solid ${C.border}`,borderRadius:9,color:C.text,fontSize:14,marginBottom:12,boxSizing:"border-box",outline:"none"},lbl:{display:"block",color:C.muted,fontSize:11,fontWeight:700,marginBottom:4,letterSpacing:.8,textTransform:"uppercase"}};
+  return(
+    <div style={{minHeight:"100vh",background:`linear-gradient(135deg,${C.azulO},${C.azulC})`,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:20}}>
+      <div style={{textAlign:"center",marginBottom:24}}><Logo s={72}/><h1 style={{color:"#fff",fontWeight:900,fontSize:28,margin:"12px 0 4px"}}>CANVAS</h1><p style={{color:"rgba(255,255,255,0.7)",fontSize:13}}>Academia de Dibujo y Pintura</p></div>
+      <div style={{background:C.card,borderRadius:16,padding:32,width:400,maxWidth:"95vw",boxShadow:"0 8px 40px rgba(0,0,0,0.15)"}}>
+        {newPw?(
+          <div style={{textAlign:"center"}}>
+            <div style={{fontSize:48,marginBottom:12}}>🎨</div>
+            <h3 style={{color:C.azulO,marginBottom:8}}>¡Registro completado!</h3>
+            <p style={{color:C.muted,fontSize:13,marginBottom:12}}>Tu contraseña temporal:</p>
+            <div style={{background:"#E5EEFF",borderRadius:10,padding:"12px 20px",fontSize:24,fontWeight:900,color:C.azulO,letterSpacing:4,marginBottom:12}}>{newPw.pw}</div>
+            <p style={{color:C.muted,fontSize:12,marginBottom:20}}>Email: <strong>{newPw.email}</strong></p>
+            <button onClick={()=>{setShowReg(false);setNewPw(null);}} style={{padding:"10px 24px",background:C.azulO,border:"none",borderRadius:9,color:"#fff",cursor:"pointer",fontWeight:700}}>Ir al acceso</button>
+          </div>
+        ):!showReg?(
+          <>
+            <h2 style={{color:C.azulO,margin:"0 0 20px",fontWeight:900}}>Acceder</h2>
+            <label style={s.lbl}>Email</label>
+            <input value={email} onChange={e=>setEmail(e.target.value)} style={s.inp} placeholder="tu@email.es" type="email" onKeyDown={e=>e.key==='Enter'&&doLogin()}/>
+            <label style={s.lbl}>Contraseña</label>
+            <input value={pw} onChange={e=>setPw(e.target.value)} style={s.inp} placeholder="••••••" type="password" onKeyDown={e=>e.key==='Enter'&&doLogin()}/>
+            {err&&<div style={{color:"#e53935",fontSize:13,marginBottom:10}}>⚠️ {err}</div>}
+            <button onClick={doLogin} style={{width:"100%",padding:12,background:C.azulO,border:"none",borderRadius:9,color:"#fff",cursor:"pointer",fontWeight:700,fontSize:15,marginBottom:12}}>Entrar</button>
+            <div style={{textAlign:"center",fontSize:13,color:C.muted}}>¿Eres nuevo? <button onClick={()=>{setShowReg(true);setErr('');}} style={{background:"none",border:"none",color:C.azulO,cursor:"pointer",fontWeight:700,fontSize:13}}>Regístrate</button></div>
+            <div style={{marginTop:16,padding:12,background:C.bg,borderRadius:8,fontSize:11,color:C.muted,lineHeight:1.6}}>
+              <strong>Cuentas demo:</strong><br/>
+              👑 CEO: direccion@canvas.es / canvas2026<br/>
+              👩‍🎨 Profe: luz@canvas.es / luz2026<br/>
+              🎨 Alumna: ana@demo.es / demo123
+            </div>
+          </>
+        ):(
+          <>
+            <h2 style={{color:C.azulO,margin:"0 0 20px",fontWeight:900}}>Nueva inscripción</h2>
+            <label style={s.lbl}>Nombre (aparecerá en clase)</label>
+            <input value={rf.displayName} onChange={e=>setRf(p=>({...p,displayName:e.target.value}))} style={s.inp} placeholder="Ej: María G."/>
+            <label style={s.lbl}>Email</label>
+            <input value={rf.email} onChange={e=>setRf(p=>({...p,email:e.target.value}))} style={s.inp} placeholder="tu@email.es" type="email"/>
+            <label style={s.lbl}>Clase</label>
+            <select value={rf.groupId} onChange={e=>setRf(p=>({...p,groupId:e.target.value}))} style={s.inp}>
+              {groups.filter(g=>g.students.length<MAX).map(g=><option key={g.id} value={g.id}>{DNF[g.day]} {g.time} — {g.name} ({MAX-g.students.length} huecos · {g.fee}€/mes)</option>)}
+            </select>
+            <label style={s.lbl}>Modalidad de pago</label>
+            <select value={rf.paymentType} onChange={e=>setRf(p=>({...p,paymentType:e.target.value}))} style={s.inp}>
+              <option value="monthly">Mensual</option>
+              <option value="quarterly">Trimestral</option>
+            </select>
+            {err&&<div style={{color:"#e53935",fontSize:13,marginBottom:10}}>⚠️ {err}</div>}
+            <button onClick={doReg} style={{width:"100%",padding:12,background:C.mostaza,border:"none",borderRadius:9,color:"#fff",cursor:"pointer",fontWeight:700,fontSize:15,marginBottom:10}}>Crear cuenta</button>
+            <button onClick={()=>{setShowReg(false);setErr('');}} style={{width:"100%",padding:9,background:"transparent",border:`1px solid ${C.border}`,borderRadius:9,color:C.muted,cursor:"pointer",fontSize:13}}>← Volver</button>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── SHARED HEADER ───────────────────────────────────────────────────────────
+function Header({user,view,setView,tabs,onLogout}){
+  return(
+    <header style={{background:C.azulO,color:"#fff",padding:"10px 16px",display:"flex",alignItems:"center",justifyContent:"space-between",position:"sticky",top:0,zIndex:50,boxShadow:"0 2px 12px rgba(0,0,0,0.2)"}}>
+      <div style={{display:"flex",alignItems:"center",gap:10,flexShrink:0}}>
+        <Logo s={32}/><div><div style={{fontWeight:900,fontSize:14}}>CANVAS</div><div style={{fontSize:9,opacity:.7,letterSpacing:1,textTransform:"uppercase"}}>{user.displayName}</div></div>
+      </div>
+      <nav style={{display:"flex",gap:2,alignItems:"center",flexWrap:"wrap",justifyContent:"flex-end"}}>
+        {tabs.map(([k,l])=><button key={k} onClick={()=>setView(k)} style={{padding:"6px 10px",borderRadius:20,border:"none",cursor:"pointer",fontWeight:600,fontSize:11,background:view===k?"rgba(255,255,255,0.22)":"transparent",color:"#fff"}}>{l}</button>)}
+        <button onClick={onLogout} style={{padding:"6px 10px",borderRadius:20,border:"1px solid rgba(255,255,255,0.3)",cursor:"pointer",fontSize:11,background:"transparent",color:"rgba(255,255,255,0.7)",marginLeft:4}}>Salir</button>
+      </nav>
+    </header>
+  );
+}
+
+// ─── CEO APP ─────────────────────────────────────────────────────────────────
+function CEOApp({user,users,groups,setGroups,sessions,setSessions,payments,expenses,setExpenses,validatePayment,onLogout}){
+  const [view,setView]=useState("dashboard");
+  const tabs=[["dashboard","📊 Dashboard"],["calendar","📅 Calendario"],["groups","🎨 Clases"],["payments","💳 Pagos"],["stats","📈 Estadísticas"]];
+  const p={groups,sessions,setSessions,users,payments,expenses,setExpenses,validatePayment,setGroups,role:'ceo'};
+  return(<div style={{minHeight:"100vh",background:C.bg}}><Header user={user} view={view} setView={setView} tabs={tabs} onLogout={onLogout}/><main style={{padding:16,maxWidth:1100,margin:"0 auto"}}>
+    {view==="dashboard"&&<CEODashboard {...p}/>}
+    {view==="calendar"&&<CalendarView {...p}/>}
+    {view==="groups"&&<GroupsView {...p}/>}
+    {view==="payments"&&<PaymentsView {...p}/>}
+    {view==="stats"&&<StatsView {...p}/>}
+  </main></div>);
+}
+
+// ─── CEO DASHBOARD ────────────────────────────────────────────────────────────
+function CEODashboard({groups,payments,expenses,setExpenses,users}){
+  const [showExp,setShowExp]=useState(false);
+  const [ef,setEf]=useState({concept:'',amount:'',month:CM,year:CY});
+  const activeG=groups.filter(g=>g.students.length>0);
+  const totalSt=groups.reduce((s,g)=>s+g.students.length,0);
+  const totalCap=activeG.length*MAX;
+  const occ=totalCap>0?Math.round((totalSt/totalCap)*100):0;
+  const expectedInc=groups.reduce((s,g)=>s+g.students.length*g.fee,0);
+  const curExp=expenses.filter(e=>e.month===CM&&e.year===CY).reduce((s,e)=>s+e.amount,0);
+  const curValidated=Object.entries(payments).filter(([k,p])=>{const pts=k.split('__');return parseInt(pts[1])===CY&&parseInt(pts[2])===CM&&p.status==='validated';}).reduce((s,[,p])=>s+(p.amount||0),0);
+  const balance=curValidated-curExp;
+  const studentUsers=Object.entries(users).filter(([,u])=>u.role==='student');
+
+  // Alerts
+  const alerts=[];
+  const todayD=new Date().getDate();
+  const pending=Object.entries(payments).filter(([k,p])=>{const pts=k.split('__');return parseInt(pts[1])===CY&&parseInt(pts[2])===CM&&p.status==='pending';});
+  const uploaded=Object.entries(payments).filter(([k,p])=>{const pts=k.split('__');return parseInt(pts[1])===CY&&parseInt(pts[2])===CM&&p.status==='uploaded';});
+  if(todayD>5&&pending.length>0)alerts.push({t:'warn',msg:`⚠️ ${pending.length} alumno(s) sin justificante de pago este mes`});
+  if(uploaded.length>0)alerts.push({t:'info',msg:`📎 ${uploaded.length} justificante(s) pendiente(s) de validar`});
+  groups.filter(g=>g.students.length>0&&g.students.length/MAX<0.5).forEach(g=>alerts.push({t:'warn',msg:`📉 "${g.name}" (${DNF[g.day]} ${g.time}) al ${Math.round(g.students.length/MAX*100)}% de ocupación`}));
+  if(balance<0)alerts.push({t:'danger',msg:`🔴 Balance negativo este mes: ${balance}€`});
+  if(groups.some(g=>g.students.length>=MAX))alerts.push({t:'ok',msg:`✅ Hay clases al 100% — posible lista de espera`});
+
+  // History
+  const history=useMemo(()=>{
+    const mults=[0.62,0.68,0.74,0.79,0.85,0.90,1.0];
+    return [...Array(7)].map((_,i)=>{
+      let m=CM-6+i, y=CY; if(m<=0){m+=12;y--;}
+      const exp=expenses.filter(e=>e.month===m&&e.year===y).reduce((s,e)=>s+e.amount,0);
+      const inc=i===6?curValidated:Math.round(expectedInc*mults[i]);
+      return{label:`${MN[m-1].slice(0,3)}`,income:inc,expenses:exp,balance:inc-exp};
+    });
+  },[expenses,curValidated,expectedInc]);
+  const maxV=Math.max(...history.map(h=>Math.max(h.income,h.expenses)),1);
+
+  const addExp=()=>{if(!ef.concept||!ef.amount)return;setExpenses(p=>[...p,{id:Date.now(),...ef,amount:parseFloat(ef.amount)}]);setShowExp(false);setEf({concept:'',amount:'',month:CM,year:CY});};
+  const kpi=(label,val,sub,color,big=false)=>(
+    <div style={{background:C.card,borderRadius:12,padding:"16px 18px",boxShadow:"0 1px 6px rgba(0,0,0,0.07)",borderTop:`4px solid ${color}`}}>
+      <div style={{fontSize:10,color:C.muted,fontWeight:700,letterSpacing:.8,textTransform:"uppercase",marginBottom:6}}>{label}</div>
+      <div style={{fontSize:big?32:26,fontWeight:900,color}}>{val}</div>
+      {sub&&<div style={{fontSize:11,color:C.muted,marginTop:3}}>{sub}</div>}
+    </div>
+  );
+
+  return(
+    <div>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16,flexWrap:"wrap",gap:8}}>
+        <h2 style={{margin:0,color:C.azulO,fontWeight:900}}>Dashboard — {MN[CM-1]} {CY}</h2>
+        <button onClick={()=>setShowExp(true)} style={{padding:"7px 16px",background:C.mostaza,border:"none",borderRadius:20,color:"#fff",cursor:"pointer",fontWeight:700,fontSize:12}}>+ Añadir gasto</button>
+      </div>
+
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(155px,1fr))",gap:12,marginBottom:20}}>
+        {kpi("Total alumnos",totalSt,`${activeG.length} grupos activos`,C.azulO)}
+        {kpi("Ocupación",`${occ}%`,occ>=80?"✅ Excelente":occ>=60?"🟡 En progreso":"🔴 Baja",occ>=80?"#1FA060":occ>=60?C.mostaza:"#e53935")}
+        {kpi("Ingresos validados",`${curValidated}€`,`Esperado: ${expectedInc}€`,C.mostaza)}
+        {kpi("Gastos del mes",`${curExp}€`,"Total registrado","#6C5CE7")}
+        {kpi("Balance",`${balance>=0?"+":""}${balance}€`,balance>=0?"✅ Positivo":"🔴 Negativo",balance>=0?"#1FA060":"#e53935",true)}
+      </div>
+
+      {alerts.length>0&&(
+        <div style={{background:C.card,borderRadius:12,padding:16,marginBottom:20,boxShadow:"0 1px 6px rgba(0,0,0,0.07)"}}>
+          <div style={{fontWeight:700,color:C.azulO,marginBottom:10,fontSize:14}}>🔔 Alertas automáticas</div>
+          {alerts.map((a,i)=><div key={i} style={{padding:"8px 12px",borderRadius:8,marginBottom:5,fontSize:13,background:a.t==='danger'?"#FFEBEE":a.t==='warn'?"#FFF8D5":a.t==='ok'?"#E0F7EC":"#E5EEFF",color:a.t==='danger'?"#c62828":a.t==='warn'?"#6a3800":a.t==='ok'?"#1FA060":C.azulO}}>{a.msg}</div>)}
+        </div>
+      )}
+
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16,marginBottom:20}}>
+        {/* Chart */}
+        <div style={{background:C.card,borderRadius:12,padding:20,boxShadow:"0 1px 6px rgba(0,0,0,0.07)"}}>
+          <div style={{fontWeight:700,color:C.azulO,marginBottom:16,fontSize:14}}>📈 Evolución últimos 7 meses</div>
+          <div style={{display:"flex",alignItems:"flex-end",gap:6,height:120}}>
+            {history.map((h,i)=>(
+              <div key={i} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:2}}>
+                <div style={{width:"100%",display:"flex",gap:2,alignItems:"flex-end",height:90}}>
+                  <div style={{flex:1,background:C.mostaza,borderRadius:"3px 3px 0 0",height:`${Math.max(h.income/maxV*100,2)}%`}} title={`${h.income}€`}/>
+                  <div style={{flex:1,background:"#ef5350",borderRadius:"3px 3px 0 0",height:`${Math.max(h.expenses/maxV*100,2)}%`}} title={`${h.expenses}€`}/>
+                </div>
+                <div style={{fontSize:8,color:C.muted,textAlign:"center"}}>{h.label}</div>
+                <div style={{fontSize:8,fontWeight:700,color:h.balance>=0?"#1FA060":"#e53935"}}>{h.balance>0?"+":""}{h.balance}€</div>
+              </div>
+            ))}
+          </div>
+          <div style={{display:"flex",gap:16,marginTop:10,fontSize:11,color:C.muted}}>
+            <span><span style={{display:"inline-block",width:10,height:10,background:C.mostaza,borderRadius:2,marginRight:4}}/>Ingresos</span>
+            <span><span style={{display:"inline-block",width:10,height:10,background:"#ef5350",borderRadius:2,marginRight:4}}/>Gastos</span>
+          </div>
+        </div>
+
+        {/* Occupancy by class */}
+        <div style={{background:C.card,borderRadius:12,padding:20,boxShadow:"0 1px 6px rgba(0,0,0,0.07)"}}>
+          <div style={{fontWeight:700,color:C.azulO,marginBottom:12,fontSize:14}}>🎯 Ocupación por clase</div>
+          <div style={{maxHeight:200,overflowY:"auto"}}>
+            {activeG.map(g=>{
+              const pct=Math.round(g.students.length/MAX*100);
+              const col=pct>=100?"#e53935":pct>=75?"#1FA060":pct>=50?C.mostaza:"#64748b";
+              return(
+                <div key={g.id} style={{marginBottom:10}}>
+                  <div style={{display:"flex",justifyContent:"space-between",fontSize:11,marginBottom:3}}>
+                    <span style={{color:C.text,fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:"70%"}}>{g.name} · {DNF[g.day]}</span>
+                    <span style={{color:col,fontWeight:700,flexShrink:0}}>{g.students.length}/{MAX}</span>
+                  </div>
+                  <div style={{background:C.bg,borderRadius:20,height:7}}>
+                    <div style={{width:`${pct}%`,background:col,borderRadius:20,height:"100%",transition:"width .3s"}}/>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+
+      {/* Expenses */}
+      <div style={{background:C.card,borderRadius:12,padding:20,boxShadow:"0 1px 6px rgba(0,0,0,0.07)"}}>
+        <div style={{fontWeight:700,color:C.azulO,marginBottom:12,fontSize:14}}>💸 Gastos {MN[CM-1]} {CY}</div>
+        {expenses.filter(e=>e.month===CM&&e.year===CY).length===0?<div style={{color:C.muted,fontSize:13}}>Sin gastos registrados.</div>
+          :expenses.filter(e=>e.month===CM&&e.year===CY).map(e=>(
+            <div key={e.id} style={{display:"flex",justifyContent:"space-between",padding:"7px 0",borderBottom:`1px solid ${C.border}`,fontSize:13}}>
+              <span>{e.concept}</span><span style={{fontWeight:700,color:"#e53935"}}>{e.amount}€</span>
+            </div>
+          ))}
+        <div style={{display:"flex",justifyContent:"space-between",padding:"10px 0 0",fontWeight:700,fontSize:14}}>
+          <span>Total</span><span style={{color:"#e53935"}}>{curExp}€</span>
+        </div>
+      </div>
+
+      {showExp&&(
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.45)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000}}>
+          <div style={{background:C.card,borderRadius:16,padding:24,width:360,maxWidth:"95vw",boxShadow:"0 8px 40px rgba(0,0,0,0.25)"}}>
+            <div style={{display:"flex",justifyContent:"space-between",marginBottom:16}}><h3 style={{margin:0,color:C.azulO}}>Añadir gasto</h3><button onClick={()=>setShowExp(false)} style={{background:"none",border:"none",fontSize:20,cursor:"pointer",color:C.muted}}>✕</button></div>
+            {[["Concepto","concept","text","Ej: Alquiler"],["Importe (€)","amount","number","0"]].map(([l,k,t,ph])=>(
+              <div key={k}><label style={{display:"block",color:C.muted,fontSize:11,fontWeight:700,marginBottom:4,letterSpacing:.8,textTransform:"uppercase"}}>{l}</label>
+              <input type={t} value={ef[k]} onChange={e=>setEf(p=>({...p,[k]:e.target.value}))} placeholder={ph} style={{width:"100%",padding:"9px 12px",background:C.bg,border:`1px solid ${C.border}`,borderRadius:8,color:C.text,fontSize:14,marginBottom:12,boxSizing:"border-box",outline:"none"}}/></div>
+            ))}
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:16}}>
+              {[["Mes","month"],["Año","year"]].map(([l,k])=>(
+                <div key={k}><label style={{display:"block",color:C.muted,fontSize:11,fontWeight:700,marginBottom:4,letterSpacing:.8,textTransform:"uppercase"}}>{l}</label>
+                <input type="number" value={ef[k]} onChange={e=>setEf(p=>({...p,[k]:parseInt(e.target.value)}))} style={{width:"100%",padding:"9px 12px",background:C.bg,border:`1px solid ${C.border}`,borderRadius:8,color:C.text,fontSize:14,boxSizing:"border-box",outline:"none"}}/></div>
+              ))}
+            </div>
+            <div style={{display:"flex",gap:8}}>
+              <button onClick={()=>setShowExp(false)} style={{flex:1,padding:10,background:C.bg,border:`1px solid ${C.border}`,borderRadius:9,cursor:"pointer",fontWeight:600}}>Cancelar</button>
+              <button onClick={addExp} style={{flex:1,padding:10,background:C.azulO,border:"none",borderRadius:9,color:"#fff",cursor:"pointer",fontWeight:700}}>Guardar</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── PAYMENTS VIEW ────────────────────────────────────────────────────────────
+function PaymentsView({payments,validatePayment,users,groups}){
+  const [sm,setSm]=useState(CM),[sy,setSy]=useState(CY);
+  const students=Object.entries(users).filter(([,u])=>u.role==='student');
+  const getP=email=>payments[pk(email,sy,sm)];
+  const sb=s=>({pending:{bg:"#FFEBEE",c:"#e53935",icon:"⏳",label:"Pendiente"},uploaded:{bg:"#FFF8D5",c:C.mostaza,icon:"📎",label:"Subido"},validated:{bg:"#E0F7EC",c:"#1FA060",icon:"✅",label:"Validado"}}[s]||{bg:"#FFEBEE",c:"#e53935",icon:"⏳",label:"Pendiente"});
+  return(
+    <div>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16,flexWrap:"wrap",gap:8}}>
+        <h2 style={{margin:0,color:C.azulO}}>Gestión de pagos</h2>
+        <div style={{display:"flex",gap:8}}>
+          <select value={sm} onChange={e=>setSm(parseInt(e.target.value))} style={{padding:"6px 10px",border:`1px solid ${C.border}`,borderRadius:8,color:C.text,background:C.card,fontSize:13}}>
+            {MN.map((m,i)=><option key={i} value={i+1}>{m}</option>)}
+          </select>
+          <select value={sy} onChange={e=>setSy(parseInt(e.target.value))} style={{padding:"6px 10px",border:`1px solid ${C.border}`,borderRadius:8,color:C.text,background:C.card,fontSize:13}}>
+            {[2025,2026].map(y=><option key={y} value={y}>{y}</option>)}
+          </select>
+        </div>
+      </div>
+      {students.length===0?<div style={{background:C.card,borderRadius:12,padding:40,textAlign:"center",color:C.muted}}>No hay alumnos registrados.</div>
+        :<div style={{background:C.card,borderRadius:12,overflow:"auto",boxShadow:"0 1px 6px rgba(0,0,0,0.07)"}}>
+          <table style={{width:"100%",borderCollapse:"collapse",minWidth:500}}>
+            <thead><tr style={{background:C.azulO,color:"#fff"}}>
+              {["Alumno","Clase","Cuota","Estado","Archivo","Acción"].map((h,i)=><th key={i} style={{padding:"10px 14px",textAlign:"left",fontWeight:700,fontSize:11}}>{h}</th>)}
+            </tr></thead>
+            <tbody>
+              {students.map(([email,u],si)=>{
+                const pay=getP(email), status=pay?.status||'pending', info=sb(status);
+                const grp=groups.find(g=>g.id===u.groupId);
+                return(
+                  <tr key={email} style={{background:si%2===0?C.bg:C.card,borderBottom:`1px solid ${C.border}`}}>
+                    <td style={{padding:"11px 14px",fontWeight:600,fontSize:13}}>{u.displayName}</td>
+                    <td style={{padding:"11px 14px",color:C.muted,fontSize:12}}>{grp?`${grp.name} · ${DNF[grp.day]}`:"—"}</td>
+                    <td style={{padding:"11px 14px",fontWeight:700,color:C.azulO}}>{u.fee}€</td>
+                    <td style={{padding:"11px 14px"}}><span style={{display:"inline-flex",alignItems:"center",gap:4,padding:"3px 10px",borderRadius:20,background:info.bg,color:info.c,fontWeight:700,fontSize:12}}>{info.icon} {info.label}</span></td>
+                    <td style={{padding:"11px 14px",fontSize:12,color:C.muted}}>{pay?.filename||"—"}</td>
+                    <td style={{padding:"11px 14px"}}>{status==='uploaded'&&<button onClick={()=>validatePayment(pk(email,sy,sm))} style={{padding:"6px 14px",background:"#1FA060",border:"none",borderRadius:8,color:"#fff",cursor:"pointer",fontWeight:700,fontSize:12}}>✅ Validar</button>}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>}
+    </div>
+  );
+}
+
+// ─── TEACHER APP ──────────────────────────────────────────────────────────────
+function TeacherApp({user,groups,setGroups,sessions,setSessions,onLogout}){
+  const [view,setView]=useState("mine");
+  const tabs=[["mine","📅 Mis clases"],["all","🗺️ Todas las clases"]];
+  const myGs=groups.filter(g=>g.teacher===user.teacher);
+  const [sessCtx,setSessCtx]=useState(null);
+  const sk=(gid,dt)=>`${gid}::${dt}`;
+  const gSess=(gid,dt)=>sessions[sk(gid,dt)];
+  const saveSess=(gid,dt,att)=>{setSessions(p=>({...p,[sk(gid,dt)]:{att}}));setSessCtx(null);};
+  const getMonthlyRec=name=>{const now=new Date(),ny=now.getFullYear(),nm=now.getMonth()+1;return Object.entries(sessions).filter(([k,s])=>{const dt=k.split("::")[1];if(!dt)return false;const[y,m]=dt.split("-").map(Number);return y===ny&&m===nm&&s.att?.[name]==="ar";}).length;};
+  const m=TM[user.teacher]||TM["?"];
+  const todayStr=new Date().toISOString().split('T')[0];
+  return(
+    <div style={{minHeight:"100vh",background:C.bg}}>
+      <Header user={user} view={view} setView={setView} tabs={tabs} onLogout={onLogout}/>
+      <main style={{padding:16,maxWidth:1100,margin:"0 auto"}}>
+        {view==="mine"&&(
+          <div>
+            <h2 style={{margin:"0 0 16px",color:C.azulO}}>Mis clases — <span style={{color:m.c}}>{user.teacher}</span></h2>
+            {myGs.length===0?<div style={{background:C.card,borderRadius:12,padding:40,textAlign:"center",color:C.muted}}>No tienes clases asignadas.</div>
+              :myGs.map(g=>{
+                const sess=gSess(g.id,todayStr),att=sess?.att||{},done=Object.keys(att).length>0,pr=Object.values(att).filter(x=>x==="pr").length;
+                return(
+                  <div key={g.id} style={{background:C.card,borderRadius:12,padding:20,marginBottom:14,boxShadow:"0 1px 6px rgba(0,0,0,0.07)",borderTop:`4px solid ${m.c}`}}>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:12}}>
+                      <div>
+                        <div style={{fontWeight:700,fontSize:17}}>{g.name}{g.level&&<span style={{fontWeight:400,color:C.muted,fontSize:13}}> ({g.level})</span>}</div>
+                        <div style={{color:C.muted,fontSize:13,marginTop:4}}>{DNF[g.day]} · {g.time}–{g.end} · <strong style={{color:m.c}}>{g.students.length}/{MAX}</strong> alumnos</div>
+                      </div>
+                      <button onClick={()=>setSessCtx({group:g,dateStr:todayStr})} style={{padding:"8px 16px",background:done?"#1FA060":C.azulO,border:"none",borderRadius:8,color:"#fff",cursor:"pointer",fontWeight:700,fontSize:12,flexShrink:0}}>
+                        {done?`✓ Lista (${pr}/${g.students.length})`:"Pasar lista hoy"}
+                      </button>
+                    </div>
+                    {g.students.length>0&&<div style={{borderTop:`1px solid ${C.border}`,paddingTop:10}}>
+                      <div style={{fontSize:11,color:C.muted,fontWeight:700,letterSpacing:.5,marginBottom:6}}>ALUMNOS</div>
+                      <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+                        {g.students.map(s=><span key={s} style={{padding:"3px 10px",background:m.bg,color:m.tx,borderRadius:20,fontSize:12,fontWeight:600}}>{s}</span>)}
+                      </div>
+                    </div>}
+                  </div>
+                );
+              })}
+          </div>
+        )}
+        {view==="all"&&(
+          <div>
+            <h2 style={{margin:"0 0 4px",color:C.azulO}}>Todas las clases</h2>
+            <p style={{color:C.muted,fontSize:13,marginBottom:16}}>Tus clases en modo edición · el resto en modo lectura.</p>
+            {[1,2,3,4,5].map(dow=>{
+              const dg=groups.filter(g=>g.day===dow).sort((a,b)=>a.time.localeCompare(b.time));
+              if(!dg.length)return null;
+              return(
+                <div key={dow} style={{marginBottom:18}}>
+                  <h3 style={{margin:"0 0 10px",color:C.azulO,fontSize:15,fontWeight:800,paddingBottom:6,borderBottom:`2px solid ${C.border}`}}>{DNF[dow]}</h3>
+                  <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(250px,1fr))",gap:10}}>
+                    {dg.map(g=>{const tm=TM[g.teacher]||TM["?"],mine=g.teacher===user.teacher;return(
+                      <div key={g.id} style={{background:C.card,borderRadius:10,padding:14,borderTop:`4px solid ${mine?tm.c:"#ddd"}`,boxShadow:"0 1px 4px rgba(0,0,0,0.06)"}}>
+                        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
+                          <div>
+                            <div style={{fontWeight:700,fontSize:14}}>{g.name}{mine&&<span style={{marginLeft:6,fontSize:9,background:tm.bg,color:tm.c,padding:"1px 6px",borderRadius:8,fontWeight:700}}>MÍA</span>}</div>
+                            {g.level&&<div style={{fontSize:11,color:C.muted,marginTop:1}}>{g.level}</div>}
+                            <div style={{fontSize:12,color:C.muted,marginTop:4}}>{g.time}–{g.end} · <span style={{color:tm.c,fontWeight:700}}>{g.teacher}</span></div>
+                          </div>
+                          <div style={{textAlign:"right",flexShrink:0}}>
+                            <div style={{fontWeight:700,fontSize:14,color:g.students.length>=MAX?"#e53935":g.students.length/MAX>=0.75?C.mostaza:"#1FA060"}}>{g.students.length}/{MAX}</div>
+                            <div style={{fontSize:10,color:C.muted}}>alumnos</div>
+                          </div>
+                        </div>
+                        {mine&&g.students.length>0&&<div style={{borderTop:`1px solid ${C.border}`,marginTop:10,paddingTop:8,fontSize:11,color:C.muted,lineHeight:1.8}}>{g.students.join(" · ")}</div>}
+                      </div>
+                    );})}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </main>
+      {sessCtx&&<SessionModal group={sessCtx.group} dateStr={sessCtx.dateStr} existing={gSess(sessCtx.group.id,sessCtx.dateStr)} monthlyRec={Object.fromEntries(sessCtx.group.students.map(s=>[s,getMonthlyRec(s)]))} onSave={saveSess} onClose={()=>setSessCtx(null)}/>}
+    </div>
+  );
+}
+
+// ─── STUDENT APP ──────────────────────────────────────────────────────────────
+function StudentApp({user,groups,payments,uploadPayment,onLogout}){
+  const [view,setView]=useState("profile");
+  const tabs=[["profile","👤 Mi perfil"],["schedule","📅 Horarios"]];
+  const myGroup=groups.find(g=>g.id===user.groupId);
+  const pay=payments[pk(user.email,CY,CM)];
+  const status=pay?.status||'pending';
+  const sinfo={pending:{color:"#e53935",bg:"#FFEBEE",icon:"⏳",label:"Pendiente de pago",msg:"Por favor, realiza la transferencia y sube tu justificante antes del día 5 del mes."},uploaded:{color:C.mostaza,bg:"#FFF8D5",icon:"📎",label:"Justificante enviado",msg:"Tu justificante está siendo revisado. Te confirmaremos en breve."},validated:{color:"#1FA060",bg:"#E0F7EC",icon:"✅",label:"Pago confirmado ✅",msg:"Tu pago de este mes está validado. ¡Gracias por ser parte de CANVAS!"}}[status];
+  const fileRef=useRef();
+  const handleFile=e=>{const f=e.target.files[0];if(f)uploadPayment(user.email,f.name,user.fee);};
+  const m=myGroup?TM[myGroup.teacher]||TM["?"]:null;
+  return(
+    <div style={{minHeight:"100vh",background:C.bg}}>
+      <Header user={user} view={view} setView={setView} tabs={tabs} onLogout={onLogout}/>
+      <main style={{padding:16,maxWidth:700,margin:"0 auto"}}>
+        {view==="profile"&&(
+          <div>
+            <div style={{background:C.card,borderRadius:16,padding:24,marginBottom:16,boxShadow:"0 1px 6px rgba(0,0,0,0.07)"}}>
+              <div style={{display:"flex",alignItems:"center",gap:14,marginBottom:myGroup?16:0}}>
+                <div style={{width:56,height:56,borderRadius:"50%",background:C.azulO,display:"flex",alignItems:"center",justifyContent:"center",fontSize:22,color:"#fff",fontWeight:900,flexShrink:0}}>{user.displayName[0]}</div>
+                <div><h2 style={{margin:0,color:C.azulO,fontSize:20}}>{user.displayName}</h2><div style={{color:C.muted,fontSize:13,marginTop:2}}>{user.email}</div></div>
+              </div>
+              {myGroup&&m&&<div style={{padding:"12px 16px",background:m.bg,borderRadius:10,borderLeft:`4px solid ${m.c}`}}>
+                <div style={{fontWeight:700,fontSize:15}}>{myGroup.name}{myGroup.level&&<span style={{fontWeight:400,fontSize:13,color:C.muted}}> ({myGroup.level})</span>}</div>
+                <div style={{fontSize:13,color:C.muted,marginTop:3}}>{DNF[myGroup.day]} · {myGroup.time}–{myGroup.end} · <span style={{color:m.c,fontWeight:700}}>{myGroup.teacher}</span></div>
+                <div style={{fontSize:12,color:C.muted,marginTop:2}}>Cuota: <strong>{user.fee}€</strong>/mes · Pago {user.paymentType==='monthly'?"mensual":"trimestral"}</div>
+              </div>}
+            </div>
+            <div style={{background:sinfo.bg,borderRadius:16,padding:24,boxShadow:"0 1px 6px rgba(0,0,0,0.07)",border:`2px solid ${sinfo.color}30`}}>
+              <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:12}}>
+                <span style={{fontSize:36}}>{sinfo.icon}</span>
+                <div><div style={{fontWeight:800,fontSize:18,color:sinfo.color}}>{sinfo.label}</div><div style={{fontSize:12,color:C.muted}}>{MN[CM-1]} {CY}</div></div>
+              </div>
+              <p style={{color:C.text,fontSize:14,marginBottom:16,lineHeight:1.5}}>{sinfo.msg}</p>
+              {status==='pending'&&(
+                <>
+                  <input ref={fileRef} type="file" accept=".pdf,.jpg,.jpeg,.png" style={{display:"none"}} onChange={handleFile}/>
+                  <button onClick={()=>fileRef.current.click()} style={{padding:"13px 24px",background:C.azulO,border:"none",borderRadius:10,color:"#fff",cursor:"pointer",fontWeight:700,fontSize:15,width:"100%"}}>📎 Subir justificante de pago</button>
+                  <div style={{marginTop:10,fontSize:12,color:C.muted,textAlign:"center"}}>Transferencia · IBAN ES28 2095 5458 3091 2197 7329<br/>Concepto: tu nombre + {MN[CM-1]}</div>
+                </>
+              )}
+              {status==='uploaded'&&<div style={{padding:"10px 14px",background:"rgba(255,255,255,0.6)",borderRadius:8,fontSize:13,color:C.muted}}>📎 <strong>{pay.filename}</strong> · Subido el {pay.uploadDate}</div>}
+              {status==='validated'&&<div style={{padding:"10px 14px",background:"rgba(255,255,255,0.6)",borderRadius:8,fontSize:13,color:"#1FA060",fontWeight:700}}>✅ Validado el {pay.validatedDate} · {pay.amount}€</div>}
+            </div>
+          </div>
+        )}
+        {view==="schedule"&&(
+          <div>
+            <h2 style={{margin:"0 0 4px",color:C.azulO}}>Horario de clases</h2>
+            <p style={{color:C.muted,fontSize:13,marginBottom:16}}>Máximo {MAX} alumnos por clase. 🟢 Con hueco · 🟡 Casi llena · 🔴 Completa</p>
+            {[1,2,3,4,5].map(dow=>{
+              const dg=groups.filter(g=>g.day===dow&&g.students.length>0).sort((a,b)=>a.time.localeCompare(b.time));
+              if(!dg.length)return null;
+              return(
+                <div key={dow} style={{marginBottom:14}}>
+                  <h3 style={{margin:"0 0 8px",color:C.azulO,fontSize:14,fontWeight:800}}>{DNF[dow]}</h3>
+                  {dg.map(g=>{
+                    const spots=MAX-g.students.length,full=spots===0,mine=g.id===user.groupId;
+                    const col=full?"#e53935":spots<=2?C.mostaza:"#1FA060";
+                    const tm=TM[g.teacher]||TM["?"];
+                    return(
+                      <div key={g.id} style={{background:mine?"#EEF5FF":C.card,borderRadius:10,padding:"12px 16px",marginBottom:8,display:"flex",justifyContent:"space-between",alignItems:"center",borderLeft:`4px solid ${mine?C.azulO:col}`,boxShadow:"0 1px 4px rgba(0,0,0,0.06)"}}>
+                        <div>
+                          <div style={{display:"flex",alignItems:"center",gap:7}}>
+                            <span style={{fontWeight:700,fontSize:14}}>{g.name}</span>
+                            {mine&&<span style={{fontSize:10,background:C.azulO,color:"#fff",padding:"1px 8px",borderRadius:10,fontWeight:700}}>MI CLASE</span>}
+                            {g.level&&<span style={{fontSize:11,color:C.muted}}>({g.level})</span>}
+                          </div>
+                          <div style={{fontSize:12,color:C.muted,marginTop:2}}>{g.time}–{g.end} · <span style={{color:tm.c,fontWeight:600}}>{g.teacher}</span></div>
+                        </div>
+                        <div style={{textAlign:"right",flexShrink:0}}>
+                          <div style={{padding:"4px 12px",borderRadius:20,background:full?"#FFEBEE":spots<=2?"#FFF8D5":"#E0F7EC",color:col,fontWeight:700,fontSize:12}}>
+                            {full?"Completa":`${spots} hueco${spots!==1?"s":""}`}
+                          </div>
+                          <div style={{fontSize:10,color:C.muted,marginTop:3}}>{g.students.length}/{MAX} plazas</div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </main>
+    </div>
+  );
+}
+
+// ─── SHARED: CALENDAR ────────────────────────────────────────────────────────
+function CalendarView({groups,sessions,setSessions,role}){
+  const [cur,setCur]=useState(new Date(2026,3,1)),[selDay,setSelDay]=useState(null),[sessCtx,setSessCtx]=useState(null),[filterT,setFilterT]=useState("Todas");
+  const yr=cur.getFullYear(),mo=cur.getMonth();
+  const calDays=useMemo(()=>{const first=new Date(yr,mo,1).getDay(),off=first===0?6:first-1;return[...Array(off).fill(null),...Array.from({length:new Date(yr,mo+1,0).getDate()},(_,i)=>i+1)];},[yr,mo]);
+  const gForDay=d=>{const dow=new Date(yr,mo,d).getDay();return groups.filter(g=>g.day===dow&&g.students.length>0&&(filterT==="Todas"||g.teacher===filterT));};
+  const ds=d=>`${yr}-${String(mo+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
+  const sk=(gid,dt)=>`${gid}::${dt}`;
+  const gSess=(gid,dt)=>sessions[sk(gid,dt)];
+  const saveSess=(gid,dt,att)=>{setSessions(p=>({...p,[sk(gid,dt)]:{att}}));setSessCtx(null);};
+  const getMonthlyRec=name=>{const now=new Date(),ny=now.getFullYear(),nm=now.getMonth()+1;return Object.entries(sessions).filter(([k,s])=>{const dt=k.split("::")[1];if(!dt)return false;const[y,m]=dt.split("-").map(Number);return y===ny&&m===nm&&s.att?.[name]==="ar";}).length;};
+  const today=new Date(),isToday=d=>today.getFullYear()===yr&&today.getMonth()===mo&&today.getDate()===d;
+  const navB={background:"rgba(35,80,160,0.1)",border:"none",borderRadius:8,color:C.azulO,padding:"5px 13px",cursor:"pointer",fontSize:18};
+  const fBtn=(t,a)=>{const m=TM[t];return{padding:"4px 11px",borderRadius:20,border:`2px solid ${m?.c||C.azulO}`,cursor:"pointer",fontWeight:600,fontSize:11,background:a?(m?.c||C.azulO):"transparent",color:a?"#fff":(m?.c||C.azulO)};};
+  return(
+    <div>
+      <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14}}>
+        <button onClick={()=>setCur(new Date(yr,mo-1,1))} style={navB}>‹</button>
+        <h2 style={{margin:0,flex:1,textAlign:"center",fontSize:20,fontWeight:900,color:C.azulO}}>{MN[mo]} {yr}</h2>
+        <button onClick={()=>setCur(new Date(yr,mo+1,1))} style={navB}>›</button>
+        <button onClick={()=>setCur(new Date())} style={{...navB,fontSize:12,padding:"5px 10px"}}>Hoy</button>
+      </div>
+      <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:12}}>
+        <button onClick={()=>setFilterT("Todas")} style={{padding:"4px 11px",borderRadius:20,border:`2px solid ${C.azulO}`,cursor:"pointer",fontWeight:600,fontSize:11,background:filterT==="Todas"?C.azulO:"transparent",color:filterT==="Todas"?"#fff":C.azulO}}>Todas</button>
+        {TEACHERS.map(t=><button key={t} onClick={()=>setFilterT(t)} style={fBtn(t,filterT===t)}>{t}</button>)}
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:3,marginBottom:14}}>
+        {DL.map(d=><div key={d} style={{textAlign:"center",padding:"4px 0",color:C.muted,fontWeight:700,fontSize:11}}>{d}</div>)}
+        {calDays.map((d,i)=>{
+          const dg=d?gForDay(d):[];const sel=selDay===d&&d!==null;
+          return(
+            <div key={i} onClick={()=>d&&setSelDay(sel?null:d)} style={{minHeight:72,background:sel?C.azulO:(d?C.card:"transparent"),borderRadius:8,padding:4,cursor:d?"pointer":"default",border:isToday(d)?`2px solid ${C.mostaza}`:`2px solid ${d?C.border:"transparent"}`,boxShadow:d?"0 1px 4px rgba(0,0,0,0.05)":"none"}}>
+              {d&&<>
+                <div style={{fontWeight:700,fontSize:12,marginBottom:2,color:sel?"#fff":isToday(d)?C.mostaza:C.text}}>{d}</div>
+                {dg.map(g=>{const m=TM[g.teacher]||TM["?"],sess=gSess(g.id,ds(d)),done=sess&&Object.keys(sess.att||{}).length>0;return(
+                  <div key={g.id} onClick={e=>{e.stopPropagation();setSessCtx({group:g,dateStr:ds(d)});}} style={{background:sel?"rgba(255,255,255,0.18)":m.bg,borderLeft:`3px solid ${m.c}`,borderRadius:3,padding:"1px 4px",marginBottom:1,fontSize:9,color:sel?"#fff":m.tx,cursor:"pointer",overflow:"hidden",whiteSpace:"nowrap",textOverflow:"ellipsis"}}>
+                    {done&&"✓ "}{g.time} {g.name}
+                  </div>);})}
+              </>}
+            </div>
+          );
+        })}
+      </div>
+      {selDay&&(
+        <div style={{background:C.card,borderRadius:12,padding:16,boxShadow:"0 1px 6px rgba(0,0,0,0.07)"}}>
+          <h3 style={{margin:"0 0 12px",color:C.azulO}}>{DNF[new Date(yr,mo,selDay).getDay()]} {selDay} de {MN[mo]}</h3>
+          {gForDay(selDay).length===0?<p style={{color:C.muted,margin:0}}>Sin clases este día.</p>
+            :gForDay(selDay).map(g=>{
+              const dt=ds(selDay),sess=gSess(g.id,dt),att=sess?.att||{},done=Object.keys(att).length>0,pr=Object.values(att).filter(x=>x==="pr").length;
+              const m=TM[g.teacher]||TM["?"];
+              return(
+                <div key={g.id} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"10px 12px",background:m.bg,borderRadius:10,marginBottom:8,borderLeft:`4px solid ${m.c}`}}>
+                  <div><div style={{fontWeight:700,fontSize:14}}>{g.name}{g.level&&<span style={{fontWeight:400,color:C.muted,fontSize:12}}> ({g.level})</span>}</div><div style={{fontSize:12,color:C.muted,marginTop:2}}>{g.time}–{g.end} · <span style={{color:m.c,fontWeight:700}}>{g.teacher}</span> · {g.students.length} alumnos{done&&<span style={{color:"#1FA060",fontWeight:700}}> · ✓ {pr}/{g.students.length}</span>}</div></div>
+                  <button onClick={()=>setSessCtx({group:g,dateStr:dt})} style={{padding:"7px 14px",background:done?"#1FA060":C.azulO,border:"none",borderRadius:8,color:"#fff",cursor:"pointer",fontWeight:700,fontSize:12,flexShrink:0}}>{done?"✓ Ver":"Pasar lista"}</button>
+                </div>
+              );
+            })}
+        </div>
+      )}
+      {sessCtx&&<SessionModal group={sessCtx.group} dateStr={sessCtx.dateStr} existing={gSess(sessCtx.group.id,sessCtx.dateStr)} monthlyRec={Object.fromEntries(sessCtx.group.students.map(s=>[s,getMonthlyRec(s)]))} onSave={saveSess} onClose={()=>setSessCtx(null)}/>}
+    </div>
+  );
+}
+
+// ─── SHARED: GROUPS ───────────────────────────────────────────────────────────
+function GroupsView({groups,setGroups,role}){
+  const [filterT,setFilterT]=useState("Todas"),[editGrp,setEditGrp]=useState(null);
+  const fBtn=(t,a)=>{const m=TM[t];return{padding:"4px 11px",borderRadius:20,border:`2px solid ${m?.c||C.azulO}`,cursor:"pointer",fontWeight:600,fontSize:11,background:a?(m?.c||C.azulO):"transparent",color:a?"#fff":(m?.c||C.azulO)};};
+  const saveGroup=g=>{if(g.id)setGroups(p=>p.map(x=>x.id===g.id?g:x));else setGroups(p=>[...p,{...g,id:Date.now()}]);setEditGrp(null);};
+  const delGroup=id=>{const g=groups.find(x=>x.id===id);if(window.confirm(`¿Eliminar "${g.name}"?`))setGroups(p=>p.filter(x=>x.id!==id));};
+  const filtered=filterT==="Todas"?groups:groups.filter(g=>g.teacher===filterT);
+  return(
+    <div>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
+        <h2 style={{margin:0,color:C.azulO}}>Clases <span style={{color:C.muted,fontWeight:400,fontSize:14}}>({groups.length})</span></h2>
+        {role==='ceo'&&<button onClick={()=>setEditGrp({name:"",day:1,time:"10:00",end:"11:30",teacher:"Sonia",level:"",fee:50,students:[]})} style={{padding:"8px 18px",background:C.mostaza,border:"none",borderRadius:20,color:"#fff",cursor:"pointer",fontWeight:800,fontSize:13}}>+ Nueva clase</button>}
+      </div>
+      <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:14}}>
+        <button onClick={()=>setFilterT("Todas")} style={{padding:"4px 11px",borderRadius:20,border:`2px solid ${C.azulO}`,cursor:"pointer",fontWeight:600,fontSize:11,background:filterT==="Todas"?C.azulO:"transparent",color:filterT==="Todas"?"#fff":C.azulO}}>Todas</button>
+        {TEACHERS.map(t=><button key={t} onClick={()=>setFilterT(t)} style={fBtn(t,filterT===t)}>{t}</button>)}
+      </div>
+      {[1,2,3,4,5].map(dow=>{
+        const dg=filtered.filter(g=>g.day===dow).sort((a,b)=>a.time.localeCompare(b.time));if(!dg.length)return null;
+        return(
+          <div key={dow} style={{marginBottom:20}}>
+            <h3 style={{margin:"0 0 10px",fontSize:15,color:C.azulO,fontWeight:800,paddingBottom:6,borderBottom:`2px solid ${C.border}`}}>{DNF[dow]}</h3>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(260px,1fr))",gap:10}}>
+              {dg.map(g=>{const m=TM[g.teacher]||TM["?"],emp=g.students.length===0;return(
+                <div key={g.id} style={{background:C.card,borderRadius:10,padding:14,borderTop:`4px solid ${emp?"#ccc":m.c}`,boxShadow:"0 1px 4px rgba(0,0,0,0.06)",opacity:emp?.8:1}}>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8}}>
+                    <div>
+                      <div style={{display:"flex",alignItems:"center",gap:6}}><span style={{fontWeight:700,fontSize:14}}>{g.name}</span>{emp&&<span style={{fontSize:9,background:"#f0f0f0",color:"#888",padding:"1px 6px",borderRadius:8,fontWeight:700}}>VACÍO</span>}</div>
+                      {g.level&&<span style={{display:"inline-block",fontSize:11,background:m.bg,color:m.c,padding:"1px 8px",borderRadius:10,fontWeight:600,marginTop:2}}>{g.level}</span>}
+                      <div style={{fontSize:12,color:C.muted,marginTop:4}}>{g.time}–{g.end} · <span style={{color:m.c,fontWeight:700}}>{g.teacher}</span></div>
+                      <div style={{fontSize:11,color:C.muted,marginTop:1}}>{g.students.length}/{MAX} alumnos · {g.fee}€/mes</div>
+                    </div>
+                    {role==='ceo'&&<div style={{display:"flex",gap:4,flexShrink:0}}>
+                      <button onClick={()=>setEditGrp({...g,students:[...g.students]})} style={{background:C.bg,border:`1px solid ${C.border}`,borderRadius:6,cursor:"pointer",padding:"5px 8px",fontSize:12}}>✏️</button>
+                      <button onClick={()=>delGroup(g.id)} style={{background:"#FFEBEE",border:"1px solid #ef9a9a",borderRadius:6,cursor:"pointer",padding:"5px 8px",fontSize:12}}>🗑️</button>
+                    </div>}
+                  </div>
+                  {g.students.length>0&&<div style={{borderTop:`1px solid ${C.border}`,paddingTop:8,maxHeight:80,overflowY:"auto"}}>
+                    {g.students.map(s=><div key={s} style={{fontSize:12,padding:"1px 0",display:"flex",alignItems:"center",gap:5}}><span style={{width:5,height:5,borderRadius:"50%",background:m.c,display:"inline-block",flexShrink:0}}/>{s}</div>)}
+                  </div>}
+                </div>
+              );})}
+            </div>
+          </div>
+        );
+      })}
+      {editGrp&&<GroupModal group={editGrp} onSave={saveGroup} onClose={()=>setEditGrp(null)}/>}
+    </div>
+  );
+}
+
+// ─── SHARED: STATS ────────────────────────────────────────────────────────────
+function StatsView({groups,sessions}){
+  const allSt=[...new Set(groups.flatMap(g=>g.students))].sort();
+  const getStats=name=>{let pr=0,ar=0,ab=0;Object.values(sessions).forEach(s=>{const v=s.att?.[name];if(v==="pr")pr++;else if(v==="ar")ar++;else if(v==="ab")ab++;});return{pr,ar,ab,total:pr+ar+ab};};
+  const getMonthlyRec=name=>{const now=new Date(),ny=now.getFullYear(),nm=now.getMonth()+1;return Object.entries(sessions).filter(([k,s])=>{const dt=k.split("::")[1];if(!dt)return false;const[y,m]=dt.split("-").map(Number);return y===ny&&m===nm&&s.att?.[name]==="ar";}).length;};
+  return(
+    <div>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
+        <h2 style={{margin:0,color:C.azulO}}>Estadísticas de asistencia</h2>
+        <div style={{fontSize:12,color:C.muted,background:C.card,padding:"6px 12px",borderRadius:20,border:`1px solid ${C.border}`}}>↩ Máx. 1 recuperación/mes</div>
+      </div>
+      {allSt.length===0?<div style={{background:C.card,borderRadius:12,padding:40,textAlign:"center",color:C.muted}}>Aún no hay datos de asistencia.</div>
+        :<div style={{background:C.card,borderRadius:12,overflow:"auto",boxShadow:"0 1px 6px rgba(0,0,0,0.07)"}}>
+          <table style={{width:"100%",borderCollapse:"collapse",minWidth:600}}>
+            <thead><tr style={{background:C.azulO,color:"#fff"}}>
+              {["Alumno","Clase · Día","Profesora","✓ Pres.","↩ Recup.","✗ No rec.","↩ Este mes","% Asist."].map((h,i)=><th key={i} style={{padding:"10px 12px",textAlign:i>2?"center":"left",fontWeight:700,fontSize:11,whiteSpace:"nowrap"}}>{h}</th>)}
+            </tr></thead>
+            <tbody>
+              {allSt.map((s,si)=>{
+                const st=getStats(s),grp=groups.find(g=>g.students.includes(s)),m=TM[grp?.teacher||"?"];
+                const pct=st.total>0?Math.round((st.pr/st.total)*100):null,rec=getMonthlyRec(s),recL=rec>=1;
+                return(
+                  <tr key={s} style={{background:si%2===0?C.bg:C.card,borderBottom:`1px solid ${C.border}`}}>
+                    <td style={{padding:"10px 12px",fontWeight:600,fontSize:13}}>{s}</td>
+                    <td style={{padding:"10px 12px",color:C.muted,fontSize:12}}>{grp?`${grp.name} · ${DNF[grp.day]}`:"—"}</td>
+                    <td style={{padding:"10px 12px"}}>{grp&&<span style={{padding:"2px 10px",borderRadius:10,background:m.bg,color:m.c,fontSize:12,fontWeight:700}}>{grp.teacher}</span>}</td>
+                    <td style={{padding:"10px 12px",textAlign:"center",color:"#1FA060",fontWeight:800,fontSize:16}}>{st.pr}</td>
+                    <td style={{padding:"10px 12px",textAlign:"center",color:C.mostaza,fontWeight:800,fontSize:16}}>{st.ar}</td>
+                    <td style={{padding:"10px 12px",textAlign:"center",color:"#e53935",fontWeight:800,fontSize:16}}>{st.ab}</td>
+                    <td style={{padding:"10px 12px",textAlign:"center"}}><span style={{display:"inline-flex",alignItems:"center",gap:3,padding:"3px 10px",borderRadius:20,background:recL?"#FFEBEE":"#E0F7EC",color:recL?"#e53935":"#1FA060",fontWeight:700,fontSize:12}}>{recL&&"⚠️ "}{rec}/1</span></td>
+                    <td style={{padding:"10px 12px",textAlign:"center"}}>{pct!==null?<span style={{padding:"3px 10px",borderRadius:20,background:pct>=80?"#E0F7EC":pct>=60?"#FFF8D5":"#FFEBEE",color:pct>=80?"#1FA060":pct>=60?C.mostaza:"#e53935",fontWeight:700,fontSize:12}}>{pct}%</span>:<span style={{color:C.muted}}>—</span>}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>}
+    </div>
+  );
+}
+
+// ─── GROUP MODAL ──────────────────────────────────────────────────────────────
+function GroupModal({group,onSave,onClose}){
+  const [f,setF]=useState({...group,students:[...(group.students||[])]}),[newSt,setNewSt]=useState("");
+  const m=TM[f.teacher]||TM["?"];
+  const addSt=()=>{if(newSt.trim()&&!f.students.includes(newSt.trim())&&f.students.length<MAX){setF(p=>({...p,students:[...p.students,newSt.trim()]}));setNewSt("");}};
+  const ov={position:"fixed",inset:0,background:"rgba(0,0,0,0.45)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000};
+  const md={background:C.card,borderRadius:16,padding:24,width:430,maxWidth:"95vw",maxHeight:"90vh",overflowY:"auto",boxShadow:"0 8px 40px rgba(0,0,0,0.25)"};
+  const lbl={display:"block",color:C.muted,fontSize:11,fontWeight:700,marginBottom:4,letterSpacing:.8,textTransform:"uppercase"};
+  const inp={width:"100%",padding:"8px 12px",background:C.bg,border:`1px solid ${C.border}`,borderRadius:8,color:C.text,fontSize:14,marginBottom:12,boxSizing:"border-box",outline:"none"};
+  return(<div style={ov}><div style={md}>
+    <div style={{display:"flex",justifyContent:"space-between",marginBottom:16}}><h3 style={{margin:0,color:C.azulO}}>{f.id?"Editar clase":"Nueva clase"}</h3><button onClick={onClose} style={{background:"none",border:"none",fontSize:20,cursor:"pointer",color:C.muted}}>✕</button></div>
+    <label style={lbl}>Nombre</label><input value={f.name} onChange={e=>setF(p=>({...p,name:e.target.value}))} style={inp}/>
+    <label style={lbl}>Nivel / Edad</label><input value={f.level} onChange={e=>setF(p=>({...p,level:e.target.value}))} style={inp}/>
+    <label style={lbl}>Cuota mensual (€)</label><input type="number" value={f.fee} onChange={e=>setF(p=>({...p,fee:parseInt(e.target.value)}))} style={inp}/>
+    <label style={lbl}>Día</label>
+    <div style={{display:"flex",gap:6,marginBottom:12,flexWrap:"wrap"}}>
+      {[[1,"Lun"],[2,"Mar"],[3,"Mié"],[4,"Jue"],[5,"Vie"]].map(([d,l])=><button key={d} onClick={()=>setF(p=>({...p,day:d}))} style={{padding:"6px 12px",borderRadius:20,border:`2px solid ${C.azulO}`,cursor:"pointer",fontWeight:700,fontSize:12,background:f.day===d?C.azulO:"transparent",color:f.day===d?"#fff":C.azulO}}>{l}</button>)}
+    </div>
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+      <div><label style={lbl}>Inicio</label><input type="time" value={f.time} onChange={e=>setF(p=>({...p,time:e.target.value}))} style={inp}/></div>
+      <div><label style={lbl}>Fin</label><input type="time" value={f.end} onChange={e=>setF(p=>({...p,end:e.target.value}))} style={inp}/></div>
+    </div>
+    <label style={lbl}>Profesora</label>
+    <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:12}}>
+      {TEACHERS.map(t=>{const tm=TM[t],a=f.teacher===t;return<button key={t} onClick={()=>setF(p=>({...p,teacher:t}))} style={{padding:"5px 12px",borderRadius:20,border:`2px solid ${tm.c}`,cursor:"pointer",fontWeight:700,fontSize:12,background:a?tm.c:"transparent",color:a?"#fff":tm.c}}>{t}</button>;})}
+    </div>
+    <label style={lbl}>Alumnos ({f.students.length}/{MAX})</label>
+    <div style={{display:"flex",gap:7,marginBottom:8}}>
+      <input value={newSt} onChange={e=>setNewSt(e.target.value)} onKeyDown={e=>e.key==="Enter"&&addSt()} style={{...inp,marginBottom:0,flex:1}} placeholder="Nombre del alumno"/>
+      <button onClick={addSt} style={{padding:"8px 14px",background:C.mostaza,border:"none",borderRadius:8,color:"#fff",cursor:"pointer",fontWeight:800,fontSize:18}}>+</button>
+    </div>
+    <div style={{maxHeight:120,overflowY:"auto",marginBottom:16}}>
+      {f.students.map(s=><div key={s} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"5px 10px",background:C.bg,borderRadius:7,marginBottom:3,fontSize:13}}>
+        <span style={{display:"flex",alignItems:"center",gap:6}}><span style={{width:6,height:6,borderRadius:"50%",background:m.c,display:"inline-block"}}/>{s}</span>
+        <button onClick={()=>setF(p=>({...p,students:p.students.filter(x=>x!==s)}))} style={{background:"none",border:"none",color:"#e53935",cursor:"pointer",fontSize:15}}>✕</button>
+      </div>)}
+    </div>
+    <div style={{display:"flex",gap:8}}>
+      <button onClick={onClose} style={{flex:1,padding:10,background:C.bg,border:`1px solid ${C.border}`,borderRadius:9,cursor:"pointer",fontWeight:600}}>Cancelar</button>
+      <button onClick={()=>onSave(f)} style={{flex:1,padding:10,background:C.azulO,border:"none",borderRadius:9,color:"#fff",cursor:"pointer",fontWeight:700}}>Guardar</button>
+    </div>
+  </div></div>);
+}
+
+// ─── SESSION MODAL ────────────────────────────────────────────────────────────
+function SessionModal({group,dateStr,existing,monthlyRec,onSave,onClose}){
+  const [att,setAtt]=useState(existing?.att||{});
+  const m=TM[group.teacher]||TM["?"];
+  const [yy,mm,dd]=dateStr.split("-");
+  const opts=[{k:"pr",icon:"✓",label:"Presente",color:"#1FA060",bg:"#E0F7EC"},{k:"ar",icon:"↩",label:"Recuperable",color:C.mostaza,bg:"#FFF8D5"},{k:"ab",icon:"✗",label:"No recup.",color:"#e53935",bg:"#FFEBEE"}];
+  const stats={pr:0,ar:0,ab:0};Object.values(att).forEach(v=>{if(v in stats)stats[v]++;});
+  const ov={position:"fixed",inset:0,background:"rgba(0,0,0,0.45)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000};
+  const md={background:C.card,borderRadius:16,padding:24,width:460,maxWidth:"95vw",maxHeight:"90vh",overflowY:"auto",boxShadow:"0 8px 40px rgba(0,0,0,0.25)"};
+  return(<div style={ov}><div style={md}>
+    <div style={{display:"flex",justifyContent:"space-between",marginBottom:8}}><h3 style={{margin:0,color:C.azulO,fontSize:16}}>Pasar lista</h3><button onClick={onClose} style={{background:"none",border:"none",fontSize:20,cursor:"pointer",color:C.muted}}>✕</button></div>
+    <div style={{padding:"10px 12px",background:m.bg,borderRadius:10,marginBottom:12,borderLeft:`4px solid ${m.c}`}}>
+      <div style={{fontWeight:700,fontSize:14}}>{group.name}{group.level&&<span style={{fontWeight:400,fontSize:12,color:C.muted}}> ({group.level})</span>}</div>
+      <div style={{fontSize:12,color:C.muted,marginTop:2}}>{dd}/{mm}/{yy} · {group.time}–{group.end} · <span style={{color:m.c,fontWeight:700}}>{group.teacher}</span></div>
+    </div>
+    <div style={{display:"flex",gap:8,marginBottom:10}}>
+      {opts.map(o=><div key={o.k} style={{flex:1,textAlign:"center",padding:"7px 4px",background:o.bg,borderRadius:10}}><div style={{fontSize:18,fontWeight:900,color:o.color}}>{stats[o.k]}</div><div style={{fontSize:10,color:C.muted,fontWeight:600}}>{o.label}</div></div>)}
+    </div>
+    <div style={{display:"flex",gap:6,marginBottom:10}}>
+      <button onClick={()=>group.students.forEach(s=>setAtt(p=>({...p,[s]:"pr"})))} style={{flex:1,padding:"6px",background:"#E0F7EC",border:"1px solid #1FA060",borderRadius:7,color:"#1FA060",cursor:"pointer",fontWeight:700,fontSize:12}}>✓ Todos presentes</button>
+      <button onClick={()=>setAtt({})} style={{flex:1,padding:"6px",background:C.bg,border:`1px solid ${C.border}`,borderRadius:7,color:C.muted,cursor:"pointer",fontWeight:700,fontSize:12}}>↺ Limpiar</button>
+    </div>
+    {group.students.length===0?<div style={{textAlign:"center",color:C.muted,padding:16,fontSize:13}}>Sin alumnos.</div>
+      :group.students.map(s=>{
+        const status=att[s],recUsed=monthlyRec?.[s]>=1,markAr=status==="ar";
+        return(
+          <div key={s} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 10px",background:recUsed&&markAr?"#FFF3CD":C.bg,borderRadius:8,marginBottom:5,border:recUsed&&markAr?"1px solid #f59e0b":"1px solid transparent"}}>
+            <div style={{display:"flex",alignItems:"center",gap:6}}>
+              <span style={{fontSize:13,fontWeight:500}}>{s}</span>
+              {recUsed&&<span style={{fontSize:10,background:"#FFF3CD",color:"#92400e",padding:"1px 6px",borderRadius:8,fontWeight:700}}>⚠️ límite</span>}
+            </div>
+            <div style={{display:"flex",gap:4}}>
+              {opts.map(o=>{const bl=o.k==="ar"&&recUsed&&status!=="ar";return(
+                <button key={o.k} onClick={()=>!bl&&setAtt(p=>({...p,[s]:o.k}))} style={{width:34,height:34,borderRadius:7,border:`2px solid ${status===o.k?o.color:bl?"#ddd":C.border}`,background:status===o.k?o.bg:bl?"#f5f5f5":"transparent",color:bl?"#ccc":o.color,cursor:bl?"not-allowed":"pointer",fontWeight:900,fontSize:14,display:"flex",alignItems:"center",justifyContent:"center"}}>
+                  {o.icon}
+                </button>
+              );})}
+            </div>
+          </div>
+        );
+      })}
+    <div style={{display:"flex",gap:8,marginTop:14}}>
+      <button onClick={onClose} style={{flex:1,padding:10,background:C.bg,border:`1px solid ${C.border}`,borderRadius:9,cursor:"pointer",fontWeight:600}}>Cancelar</button>
+      <button onClick={()=>onSave(group.id,dateStr,att)} style={{flex:1,padding:10,background:C.azulO,border:"none",borderRadius:9,color:"#fff",cursor:"pointer",fontWeight:700}}>Guardar</button>
+    </div>
+  </div></div>);
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+</body>
+</html>
