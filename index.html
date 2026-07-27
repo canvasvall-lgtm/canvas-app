@@ -1,357 +1,819 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-<meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1"/>
 <title>CANVAS — Academia de Dibujo y Pintura</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
-<style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:'Segoe UI',system-ui,sans-serif;background:#EEF5FF;color:#1B2D50}input,select,button{font-family:inherit}</style>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  :root{
+    --mostaza:#E9A800; --azul-claro:#6FC2D8; --azul-oscuro:#2350A0; --fondo:#EEF5FF;
+    --rojo:#E05353; --verde:#3FAE6B; --gris:#8A93A6; --texto:#1E2A3A;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:var(--fondo);color:var(--texto);}
+  button{font-family:inherit;cursor:pointer;border:none;border-radius:10px;padding:10px 16px;font-weight:600;transition:.15s;}
+  button:active{transform:scale(.97);}
+  input,select,textarea{font-family:inherit;border:2px solid #D8E3F5;border-radius:10px;padding:10px 12px;font-size:15px;width:100%;background:#fff;}
+  input:focus,select:focus,textarea:focus{outline:none;border-color:var(--azul-claro);}
+  .btn-primary{background:var(--mostaza);color:#fff;}
+  .btn-secondary{background:var(--azul-claro);color:#fff;}
+  .btn-dark{background:var(--azul-oscuro);color:#fff;}
+  .btn-ghost{background:#fff;color:var(--azul-oscuro);border:2px solid #D8E3F5;}
+  .btn-danger{background:var(--rojo);color:#fff;}
+  .card{background:#fff;border-radius:16px;padding:18px;box-shadow:0 2px 12px rgba(35,80,160,.08);}
+  .container{max-width:1100px;margin:0 auto;padding:16px;}
+  .row{display:flex;gap:12px;flex-wrap:wrap;}
+  .col{flex:1;min-width:220px;}
+  .badge{display:inline-block;padding:3px 10px;border-radius:999px;font-size:12px;font-weight:700;}
+  .badge-ok{background:#E4F7EC;color:var(--verde);}
+  .badge-warn{background:#FFF3D6;color:var(--mostaza);}
+  .badge-bad{background:#FCE7E7;color:var(--rojo);}
+  .tabs{display:flex;gap:6px;overflow-x:auto;padding-bottom:4px;}
+  .tab{padding:9px 16px;border-radius:999px;background:#fff;color:var(--azul-oscuro);font-weight:600;white-space:nowrap;font-size:14px;}
+  .tab.active{background:var(--azul-oscuro);color:#fff;}
+  .topbar{background:var(--azul-oscuro);color:#fff;padding:14px 16px;display:flex;justify-content:space-between;align-items:center;}
+  .modal-bg{position:fixed;inset:0;background:rgba(30,42,58,.5);display:flex;align-items:center;justify-content:center;z-index:50;padding:16px;}
+  .modal{background:#fff;border-radius:16px;padding:20px;max-width:520px;width:100%;max-height:88vh;overflow-y:auto;}
+  table{width:100%;border-collapse:collapse;font-size:14px;}
+  th,td{padding:8px 6px;text-align:left;border-bottom:1px solid #EEF2F8;}
+  th{color:var(--gris);font-size:12px;text-transform:uppercase;}
+  .confetti{position:fixed;inset:0;pointer-events:none;overflow:hidden;z-index:40;}
+  .confetti span{position:absolute;top:-20px;font-size:22px;animation:fall linear forwards;}
+  @keyframes fall{to{transform:translateY(110vh) rotate(360deg);opacity:.3;}}
+  .birthday-banner{background:linear-gradient(135deg,var(--mostaza),#F5C542);color:#fff;border-radius:16px;padding:20px;text-align:center;margin-bottom:16px;}
+  a{color:var(--azul-oscuro);}
+  .loader{width:34px;height:34px;border:4px solid #D8E3F5;border-top-color:var(--azul-oscuro);border-radius:50%;animation:spin .8s linear infinite;margin:40px auto;}
+  @keyframes spin{to{transform:rotate(360deg);}}
+  .err{color:var(--rojo);font-size:14px;margin:4px 0;}
+  .ok{color:var(--verde);font-size:14px;margin:4px 0;}
+  .empty{text-align:center;color:var(--gris);padding:30px 10px;}
+</style>
 </head>
-<body><div id="root"></div>
-<script type="text/babel">
-const {useState,useMemo,useRef}=React;
-const C={mostaza:"#E9A800",azulC:"#6FC2D8",azulO:"#2350A0",bg:"#EEF5FF",card:"#FFFFFF",text:"#1B2D50",muted:"#7A92B0",border:"#C5DDF2"};
-const TM={Luz:{c:"#E9A800",bg:"#FFF8D5",tx:"#6a3800"},Sonia:{c:"#2350A0",bg:"#E5EEFF",tx:"#12296a"},Magaly:{c:"#6FC2D8",bg:"#DFF5FC",tx:"#085868"},Patry:{c:"#9B59B6",bg:"#F0E8FA",tx:"#5a1580"},Inge:{c:"#1FA060",bg:"#E0F7EC",tx:"#0a4a28"},"?":{c:"#999",bg:"#f0f0f0",tx:"#555"}};
-const MN=["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
-const DNF=["Domingo","Lunes","Martes","Miércoles","Jueves","Viernes","Sábado"];
-const DL=["Lun","Mar","Mié","Jue","Vie","Sáb","Dom"];
-const TEACHERS=["Luz","Sonia","Magaly","Patry","Inge"];
-const MAX=8;
-const NOW=new Date(), CM=NOW.getMonth()+1, CY=NOW.getFullYear();
-const pk=(e,y,m)=>`${e}__${y}__${m}`;
+<body>
+<div id="root"></div>
+<script type="text/babel" data-presets="react">
 
-const INIT_USERS={
-  'direccion@canvas.es':{pw:'canvas2026',role:'ceo',displayName:'Directora'},
-  'luz@canvas.es':{pw:'luz2026',role:'teacher',displayName:'Luz',teacher:'Luz'},
-  'sonia@canvas.es':{pw:'sonia2026',role:'teacher',displayName:'Sonia',teacher:'Sonia'},
-  'magaly@canvas.es':{pw:'magaly2026',role:'teacher',displayName:'Magaly',teacher:'Magaly'},
-  'patry@canvas.es':{pw:'patry2026',role:'teacher',displayName:'Patry',teacher:'Patry'},
-  'inge@canvas.es':{pw:'inge2026',role:'teacher',displayName:'Inge',teacher:'Inge'},
-  'ana@demo.es':{pw:'demo123',role:'student',displayName:'Ana G.',groupId:3,fee:50,paymentType:'monthly'},
-  'carlos@demo.es':{pw:'demo123',role:'student',displayName:'Carlos L.',groupId:6,fee:50,paymentType:'quarterly'},
-  'maria@demo.es':{pw:'demo123',role:'student',displayName:'María M.',groupId:10,fee:40,paymentType:'monthly'},
-};
+const {useState,useEffect,useMemo,useRef} = React;
 
-const INIT_GROUPS=[
-  {id:1,name:"Aerografía",day:1,time:"17:00",end:"19:00",teacher:"Luz",level:"",fee:50,students:["Carmen Gallego Martín","Jacoba López Alonso"]},
-  {id:2,name:"Aerografía",day:1,time:"19:00",end:"21:00",teacher:"Luz",level:"",fee:50,students:["Loreto García","Rosa Rico Fernández","Belén Benito Pérez","José Luis Pérez","Resu Jiménez","Amaya Juánez Catalina"]},
-  {id:3,name:"Arte Textil",day:2,time:"11:30",end:"13:30",teacher:"Sonia",level:"",fee:50,students:["Ana González","Amparo Ortega","María del Carmen Álvarez","Elisa Toquero","Isabel Fernández","Adriana Sánchez","María San Miguel","Matías Borrajo"]},
-  {id:4,name:"Pintura Infantil",day:2,time:"17:00",end:"18:00",teacher:"Sonia",level:"4-8 años",fee:40,students:["Maia Marques","Manuela Palmero","Mateo Ruiz","Nahia Cortegoso","Gala Alonso"]},
-  {id:5,name:"Pintura Juvenil",day:2,time:"18:00",end:"19:30",teacher:"Sonia",level:"9-13 años",fee:50,students:["Andrea Delgado","María López","Natalia Pérez","Inés Quintana","Irene Ruiz","Martín Gómez","Vera Muñoz"]},
-  {id:6,name:"Pintura Adultos",day:2,time:"19:30",end:"21:00",teacher:"Sonia",level:"",fee:50,students:["David Barrio","Mónica González","Aarón de Sancho","Silvia Gómez","Nora Cordeiro","Susana Martín","Isabel Ortega","Silvia Sanz"]},
-  {id:7,name:"Acuarela Intermedio",day:2,time:"19:30",end:"21:00",teacher:"Patry",level:"",fee:50,students:[]},
-  {id:8,name:"Acuarela Intermedio",day:3,time:"11:00",end:"12:30",teacher:"?",level:"",fee:50,students:[]},
-  {id:9,name:"Arte Textil",day:3,time:"17:00",end:"19:00",teacher:"Luz",level:"",fee:50,students:[]},
-  {id:10,name:"Pintura Infantil",day:3,time:"17:00",end:"18:00",teacher:"Luz",level:"4-8 años",fee:40,students:["Silvia Pérez","Elliot García","Leo","Lucas","Zoe Alonso","Marcos Calaveras","Laia Ramos Vidal"]},
-  {id:11,name:"Pintura Adultos",day:3,time:"18:00",end:"19:30",teacher:"Luz",level:"",fee:50,students:["Daniela Mate","Mercedes Castellanos","María Isabel Macías","Charo Castellanos","María Rodríguez López","Loreto García","Belén Benito Pérez"]},
-  {id:12,name:"Pintura Adultos",day:3,time:"19:30",end:"21:00",teacher:"Luz",level:"",fee:50,students:["María de Pedro","Ana Lucía Valencia","Ana Sofía Díez","Lucía Lozano Mínguez","Miguel Ángel Rodríguez","María Arroyo Hernando","Cristina Tapia"]},
-  {id:13,name:"Pintura Adultos",day:4,time:"11:00",end:"12:30",teacher:"Sonia",level:"",fee:50,students:["Maria del Valle","Daniel Martín","Alexandra Abreu"]},
-  {id:14,name:"Pintura Juvenil",day:4,time:"17:00",end:"18:00",teacher:"Sonia",level:"9-13 años",fee:50,students:["Martín Álvarez","Emily Mara","Agustina Bustos","Emma González","Silvia Pérez","Paula Benavente","Olaya Miano"]},
-  {id:15,name:"Manos Creativas",day:4,time:"17:00",end:"18:00",teacher:"Inge",level:"4-6 años",fee:40,students:["Gala Alonso","Berta Ruano","Candela Rascón","Alba Alfageme","Valentina Villar","Lara de Manuel"]},
-  {id:16,name:"Pintura Adultos",day:4,time:"18:00",end:"19:30",teacher:"Sonia",level:"",fee:50,students:["Marta Ayala","Elise Rembliere","María Cifuentes","Sofía Cifuentes","Nicolás Martín","Lourdes Benito","Alicia Torrijos"]},
-  {id:17,name:"Arte Textil",day:4,time:"18:00",end:"19:30",teacher:"Inge",level:"",fee:50,students:["Daniela López","Matías","Bruno Orobón","Arturo Coullaut","Martín Fernández","Judit Gaíl","Noa Pradier","Eloy Domínguez"]},
-  {id:18,name:"Pintura Adultos",day:4,time:"19:30",end:"21:00",teacher:"Sonia",level:"",fee:50,students:["Lucía García","Paula Collantes","Pablo Yllera","Ester Abad","Pilar Fernández","Macarena Vielba"]},
-  {id:19,name:"Pintura Infantil",day:5,time:"17:00",end:"18:00",teacher:"Magaly",level:"4-8 años",fee:40,students:["Nerea Álvarez","Eva Murciego","Ema Wix","Emma González","Alejandra Gutiérrez","Valentina Utrera","Isabel Fernández"]},
-  {id:20,name:"Pintura Juvenil",day:5,time:"18:00",end:"19:30",teacher:"Magaly",level:"9-13 años",fee:50,students:["Carlota","Daniela","Vera","Celia","Iván","María López"]},
+/* ============================================================
+   CONFIGURACIÓN SUPABASE
+   ============================================================ */
+const LOGO_B64 = "data:image/jpeg;base64,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aRfM/L/M4/QvCt7flZboNawHnkfOw9h2/Gu70zTLTToPJtIlQdz3Y+pNXAMUtfrOScMYLKFemuaf8z3+Xb5fM+YxmY1sU/edl2ADAooor6M4QooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAowKKKAEKgjGKzNQ0DSb3LTWaBz/ABJ8p/StSiubE4PD4qPJXgpLzSZdOpOm7wdmcbd+CISSbW9dPQSKGH6YrLufBurR58owTD/ZfH869GwKK+YxPAuT19VBxf8Adb/J3R6NPOcXDeV/U8ql8O63H10+VvdSD/Kq76VqiHDafcg/9cj/AIV67gelGK8ar4bYN/BWkvVJ/wCR1x4grLeK/E8gGnaif+XC6/79NUsWi6vJ9zTrk/VCK9aowKiHhrh0/frtrySX+Y3xDV6QR5hB4W1uU82gjHq7gVo2vgm8cg3F3DGO4QFj/Su+wPSjFelh/D3KqWs+afq7fkkc888xUtrL5f5nM2Pg7S4SDOZbkj+820fkK3rOytLSMJbW8cK+iLirFFfT4HJsDgf93pKPnbX73r+J51bFVq38STYmBS4oor0zAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKAP/2Q==";
+
+const SUPABASE_URL = "https://olaqjyzlskgmzafahrhp.supabase.co";
+const SUPABASE_KEY = "sb_publishable_HHIUBJUIJZh12xGs4mBvww_yl92q3JR";
+const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
+  auth: { persistSession: true, autoRefreshToken: true }
+});
+
+/* ============================================================
+   CONSTANTES DE MARCA Y NEGOCIO
+   ============================================================ */
+const TM = { Luz:"#E9A800", Sonia:"#6FC2D8", Magaly:"#2350A0", Patry:"#E05353", Inge:"#3FAE6B", Nuria:"#9B6FD8" };
+const TEACHERS = ["Luz","Sonia","Magaly","Patry","Inge","Nuria"];
+const MAX = 8;
+const DNF = ["Lunes","Martes","Miércoles","Jueves","Viernes"];
+const MN = ["","Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
+const STANDARD_ENROLLMENT_FEE = 10; // matrícula estándar
+
+const CONDITIONS_TEXT = [
+  ["Matrícula", "Se paga una única vez al darte de alta y no es reembolsable."],
+  ["Cuota mensual", "Se paga por adelantado dentro de los primeros días de cada mes. No es reembolsable."],
+  ["Recuperar clases", "Si no puedes asistir a tu clase, debes darte de baja de esa sesión concreta desde la app con al menos 5 horas de antelación — así tendrás derecho a recuperarla. Para recuperarla (o para canjear un bono regalo), puedes inscribirte en un hueco libre de otra clase hasta 3 horas antes de que empiece esa sesión. Solo se puede recuperar 1 clase al mes."],
+  ["Darte de baja de la academia", "Puedes darte de baja cuando quieras, pero debes avisarnos antes del día 1 del último mes al que vayas a asistir. Si avisas después, se cobrará ese mes igualmente."],
+  ["Puntualidad", "Intenta llegar a tu hora — las entradas tardías interrumpen la clase de tus compañeros."],
+  ["Materiales", "La academia proporciona lo básico (folios, lápices, pinturas...). El material específico de tu técnica corre por tu cuenta."],
+  ["Cuidado del material", "Cualquier daño por mal uso de los materiales o el equipo de la academia será responsabilidad del alumno o su familia."],
+  ["Tus obras", "Al terminar cada proyecto, puedes llevarte tus trabajos a casa."],
+  ["Exposición de fin de curso", "Organizamos una exposición donde podéis mostrar vuestro trabajo. Participar es totalmente voluntario."],
+  ["Comunicación", "Os avisaremos de horarios, eventos y novedades por WhatsApp, email o teléfono."]
 ];
+const IBAN = "ES48 1583 0001 1190 0005 3764"; // Revolut Business Pro — titular: Laura Sanz
 
-const INIT_PAYMENTS={
-  [pk('ana@demo.es',CY,CM)]:{status:'validated',filename:'transferencia_abril.pdf',amount:50,uploadDate:'2026-04-02',validatedDate:'2026-04-03'},
-  [pk('carlos@demo.es',CY,CM)]:{status:'uploaded',filename:'pago_cuota_abril.pdf',amount:50,uploadDate:'2026-04-04'},
-  [pk('maria@demo.es',CY,CM)]:{status:'pending',amount:40},
-};
+const NOW = new Date();
+const CY = NOW.getFullYear(), CM = NOW.getMonth()+1;
+const todayISO = NOW.toISOString().split("T")[0];
+const isAugustNow = CM === 8;
 
-const genExpenses=()=>{
-  const base=[{concept:'Alquiler local',amount:1200},{concept:'Profesoras',amount:2000},{concept:'Material',amount:280},{concept:'Seguros',amount:150}];
-  const items=[];let id=1;
-  [[10,2025],[11,2025],[12,2025],[1,2026],[2,2026],[3,2026],[CM,CY]].forEach(([m,y])=>base.forEach(e=>items.push({id:id++,...e,month:m,year:y})));
-  return items;
-};
-
-// ─── LOGO ───────────────────────────────────────────────────────────────────
-function Logo({s=36}){return(
-  <svg width={s} height={s} viewBox="0 0 100 100">
-    <defs><clipPath id="cc"><circle cx="50" cy="50" r="47"/></clipPath></defs>
-    <circle cx="50" cy="50" r="47" fill="#2350A0"/>
-    <ellipse cx="68" cy="36" rx="34" ry="34" fill="#E9A800" clipPath="url(#cc)"/>
-    <circle cx="50" cy="50" r="47" fill="none" stroke="white" strokeWidth="3.5"/>
-    <rect x="47" y="22" width="7" height="30" rx="3" fill="white" transform="rotate(25 50 50)"/>
-    <polygon points="50,74 46,83 54,83" fill="#6FC2D8" transform="rotate(25 50 50)"/>
-    <text x="50" y="58" textAnchor="middle" fill="white" fontSize="15" fontWeight="900" fontFamily="Arial Black,Arial,sans-serif" letterSpacing="1.5">CANVAS</text>
-  </svg>
-);}
-
-// ─── APP ────────────────────────────────────────────────────────────────────
-function App(){
-  const [users,setUsers]=useState(INIT_USERS);
-  const [groups,setGroups]=useState(INIT_GROUPS);
-  const [sessions,setSessions]=useState({});
-  const [payments,setPayments]=useState(INIT_PAYMENTS);
-  const [expenses,setExpenses]=useState(genExpenses());
-  const [user,setUser]=useState(null);
-  const [showReg,setShowReg]=useState(false);
-
-  const login=(email,pw)=>{const u=users[email.toLowerCase()];if(!u)return"Email no encontrado";if(u.pw!==pw)return"Contraseña incorrecta";setUser({email:email.toLowerCase(),...u});return null;};
-
-  const register=(data)=>{
-    const email=data.email.toLowerCase();
-    if(users[email])return"Este email ya está registrado";
-    const pw=Math.random().toString(36).slice(2,8).toUpperCase();
-    const gid=parseInt(data.groupId), grp=groups.find(g=>g.id===gid);
-    const nu={pw,role:'student',displayName:data.displayName,groupId:gid,fee:grp?.fee||50,paymentType:data.paymentType};
-    setUsers(p=>({...p,[email]:nu}));
-    if(grp&&grp.students.length<MAX) setGroups(p=>p.map(g=>g.id===gid?{...g,students:[...g.students,data.displayName]}:g));
-    return{pw,email};
-  };
-
-  const validatePayment=key=>setPayments(p=>({...p,[key]:{...p[key],status:'validated',validatedDate:new Date().toISOString().split('T')[0]}}));
-  const uploadPayment=(email,filename,amount)=>{const key=pk(email,CY,CM);setPayments(p=>({...p,[key]:{status:'uploaded',filename,amount,uploadDate:new Date().toISOString().split('T')[0]}}));};
-
-  if(!user)return<LoginScreen onLogin={login} onRegister={register} showReg={showReg} setShowReg={setShowReg} groups={groups}/>;
-  const props={user,users,groups,setGroups,sessions,setSessions,payments,expenses,setExpenses,validatePayment,uploadPayment,onLogout:()=>setUser(null)};
-  if(user.role==='ceo')return<CEOApp {...props}/>;
-  if(user.role==='teacher')return<TeacherApp {...props}/>;
-  return<StudentApp {...props}/>;
+function isBirthday(dateStr){
+  if(!dateStr) return false;
+  const b = new Date(dateStr+"T00:00:00");
+  return b.getDate()===NOW.getDate() && b.getMonth()===NOW.getMonth();
+}
+function ageFromBirthdate(dateStr){
+  if(!dateStr) return null;
+  const b = new Date(dateStr+"T00:00:00");
+  let age = NOW.getFullYear()-b.getFullYear();
+  const notYet = (NOW.getMonth()<b.getMonth())||(NOW.getMonth()===b.getMonth()&&NOW.getDate()<b.getDate());
+  if(notYet) age--;
+  return age;
+}
+function genTempPassword(){
+  const words=["Pincel","Lienzo","Color","Paleta","Trazo","Acuarela"];
+  const w = words[Math.floor(Math.random()*words.length)];
+  const n = Math.floor(1000+Math.random()*9000);
+  return `${w}${n}!`;
+}
+function effectiveRoster(g, profilesArr){
+  const extra = (profilesArr||[]).filter(p=>p.role==="student" && p.group_id===g.id).map(p=>p.display_name);
+  return [...(g.students||[]), ...extra];
+}
+function nextOccurrences(dayOfWeek, count=3){
+  const dates=[]; let d = new Date(NOW); d.setHours(0,0,0,0);
+  for(let i=0;i<60 && dates.length<count;i++){
+    const dow = ((d.getDay()+6)%7)+1;
+    if(dow===dayOfWeek) dates.push(d.toISOString().split("T")[0]);
+    d.setDate(d.getDate()+1);
+  }
+  return dates;
+}
+function sessionDateTime(dateStr, timeStr){
+  return new Date(dateStr+"T"+timeStr+":00");
+}
+function hoursUntil(dateStr, timeStr){
+  return (sessionDateTime(dateStr,timeStr) - NOW) / 3600000;
 }
 
-// ─── LOGIN ───────────────────────────────────────────────────────────────────
-function LoginScreen({onLogin,onRegister,showReg,setShowReg,groups}){
-  const [email,setEmail]=useState(''),  [pw,setPw]=useState(''), [err,setErr]=useState(''), [newPw,setNewPw]=useState(null);
-  const [rf,setRf]=useState({displayName:'',email:'',groupId:groups.find(g=>g.students.length<MAX)?.id||1,paymentType:'monthly'});
-  const doLogin=()=>{const e=onLogin(email,pw);if(e)setErr(e);};
-  const doReg=()=>{if(!rf.displayName.trim()||!rf.email.trim()){setErr("Completa todos los campos");return;}const r=onRegister(rf);if(typeof r==='string'){setErr(r);return;}setNewPw(r);};
-  const s={inp:{width:"100%",padding:"10px 14px",background:C.bg,border:`1px solid ${C.border}`,borderRadius:9,color:C.text,fontSize:14,marginBottom:12,boxSizing:"border-box",outline:"none"},lbl:{display:"block",color:C.muted,fontSize:11,fontWeight:700,marginBottom:4,letterSpacing:.8,textTransform:"uppercase"}};
-  return(
-    <div style={{minHeight:"100vh",background:`linear-gradient(135deg,${C.azulO},${C.azulC})`,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:20}}>
-      <div style={{textAlign:"center",marginBottom:24}}><Logo s={72}/><h1 style={{color:"#fff",fontWeight:900,fontSize:28,margin:"12px 0 4px"}}>CANVAS</h1><p style={{color:"rgba(255,255,255,0.7)",fontSize:13}}>Academia de Dibujo y Pintura</p></div>
-      <div style={{background:C.card,borderRadius:16,padding:32,width:400,maxWidth:"95vw",boxShadow:"0 8px 40px rgba(0,0,0,0.15)"}}>
-        {newPw?(
-          <div style={{textAlign:"center"}}>
-            <div style={{fontSize:48,marginBottom:12}}>🎨</div>
-            <h3 style={{color:C.azulO,marginBottom:8}}>¡Registro completado!</h3>
-            <p style={{color:C.muted,fontSize:13,marginBottom:12}}>Tu contraseña temporal:</p>
-            <div style={{background:"#E5EEFF",borderRadius:10,padding:"12px 20px",fontSize:24,fontWeight:900,color:C.azulO,letterSpacing:4,marginBottom:12}}>{newPw.pw}</div>
-            <p style={{color:C.muted,fontSize:12,marginBottom:20}}>Email: <strong>{newPw.email}</strong></p>
-            <button onClick={()=>{setShowReg(false);setNewPw(null);}} style={{padding:"10px 24px",background:C.azulO,border:"none",borderRadius:9,color:"#fff",cursor:"pointer",fontWeight:700}}>Ir al acceso</button>
-          </div>
-        ):!showReg?(
-          <>
-            <h2 style={{color:C.azulO,margin:"0 0 20px",fontWeight:900}}>Acceder</h2>
-            <label style={s.lbl}>Email</label>
-            <input value={email} onChange={e=>setEmail(e.target.value)} style={s.inp} placeholder="tu@email.es" type="email" onKeyDown={e=>e.key==='Enter'&&doLogin()}/>
-            <label style={s.lbl}>Contraseña</label>
-            <input value={pw} onChange={e=>setPw(e.target.value)} style={s.inp} placeholder="••••••" type="password" onKeyDown={e=>e.key==='Enter'&&doLogin()}/>
-            {err&&<div style={{color:"#e53935",fontSize:13,marginBottom:10}}>⚠️ {err}</div>}
-            <button onClick={doLogin} style={{width:"100%",padding:12,background:C.azulO,border:"none",borderRadius:9,color:"#fff",cursor:"pointer",fontWeight:700,fontSize:15,marginBottom:12}}>Entrar</button>
-            <div style={{textAlign:"center",fontSize:13,color:C.muted}}>¿Eres nuevo? <button onClick={()=>{setShowReg(true);setErr('');}} style={{background:"none",border:"none",color:C.azulO,cursor:"pointer",fontWeight:700,fontSize:13}}>Regístrate</button></div>
-            <div style={{marginTop:16,padding:12,background:C.bg,borderRadius:8,fontSize:11,color:C.muted,lineHeight:1.6}}>
-              <strong>Cuentas demo:</strong><br/>
-              👑 CEO: direccion@canvas.es / canvas2026<br/>
-              👩‍🎨 Profe: luz@canvas.es / luz2026<br/>
-              🎨 Alumna: ana@demo.es / demo123
-            </div>
-          </>
-        ):(
-          <>
-            <h2 style={{color:C.azulO,margin:"0 0 20px",fontWeight:900}}>Nueva inscripción</h2>
-            <label style={s.lbl}>Nombre (aparecerá en clase)</label>
-            <input value={rf.displayName} onChange={e=>setRf(p=>({...p,displayName:e.target.value}))} style={s.inp} placeholder="Ej: María G."/>
-            <label style={s.lbl}>Email</label>
-            <input value={rf.email} onChange={e=>setRf(p=>({...p,email:e.target.value}))} style={s.inp} placeholder="tu@email.es" type="email"/>
-            <label style={s.lbl}>Clase</label>
-            <select value={rf.groupId} onChange={e=>setRf(p=>({...p,groupId:e.target.value}))} style={s.inp}>
-              {groups.filter(g=>g.students.length<MAX).map(g=><option key={g.id} value={g.id}>{DNF[g.day]} {g.time} — {g.name} ({MAX-g.students.length} huecos · {g.fee}€/mes)</option>)}
-            </select>
-            <label style={s.lbl}>Modalidad de pago</label>
-            <select value={rf.paymentType} onChange={e=>setRf(p=>({...p,paymentType:e.target.value}))} style={s.inp}>
-              <option value="monthly">Mensual</option>
-              <option value="quarterly">Trimestral</option>
-            </select>
-            {err&&<div style={{color:"#e53935",fontSize:13,marginBottom:10}}>⚠️ {err}</div>}
-            <button onClick={doReg} style={{width:"100%",padding:12,background:C.mostaza,border:"none",borderRadius:9,color:"#fff",cursor:"pointer",fontWeight:700,fontSize:15,marginBottom:10}}>Crear cuenta</button>
-            <button onClick={()=>{setShowReg(false);setErr('');}} style={{width:"100%",padding:9,background:"transparent",border:`1px solid ${C.border}`,borderRadius:9,color:C.muted,cursor:"pointer",fontSize:13}}>← Volver</button>
-          </>
-        )}
+/* ============================================================
+   COMPONENTES COMPARTIDOS
+   ============================================================ */
+function Logo({size=40, dark=false}){
+  return (
+    <div style={{display:"flex",alignItems:"center",gap:10}}>
+      <div style={{width:size,height:size,borderRadius:size*0.28,background:"#fff",display:"flex",alignItems:"center",justifyContent:"center",overflow:"hidden",boxShadow:dark?"0 1px 4px rgba(0,0,0,.2)":"none"}}>
+        <img src={LOGO_B64} alt="CANVAS" style={{width:"100%",height:"100%",objectFit:"cover"}}/>
       </div>
+      <div style={{fontWeight:800,fontSize:size*0.45,color:dark?"#fff":"var(--azul-oscuro)",letterSpacing:.5}}>CANVAS</div>
+    </div>
+  );
+}
+function LoadingScreen(){
+  return <div className="container"><div className="loader"></div><p style={{textAlign:"center",color:"var(--gris)"}}>Cargando CANVAS…</p></div>;
+}
+function Confetti(){
+  const pieces = useMemo(()=>Array.from({length:36},(_,i)=>({
+    id:i, left:Math.random()*100, delay:Math.random()*1.2, dur:2.2+Math.random()*1.8,
+    emoji:["🎉","🎨","🎈","✨","🖌️"][i%5]
+  })),[]);
+  return (
+    <div className="confetti">
+      {pieces.map(p=>(
+        <span key={p.id} style={{left:p.left+"%",animationDelay:p.delay+"s",animationDuration:p.dur+"s"}}>{p.emoji}</span>
+      ))}
+    </div>
+  );
+}
+function BirthdayBanner({name}){
+  const first = (name||"").split(" ")[0];
+  return (
+    <>
+      <Confetti/>
+      <div className="birthday-banner">
+        <div style={{fontSize:38}}>🎂🎉</div>
+        <div style={{fontSize:20,fontWeight:800}}>¡Feliz cumpleaños, {first}!</div>
+        <div style={{opacity:.95,marginTop:4}}>Todo el equipo de CANVAS te desea un día lleno de color. ¡Que lo celebres a lo grande! 🎨</div>
+      </div>
+    </>
+  );
+}
+function Field({label,children}){
+  return <div style={{marginBottom:12}}><label style={{display:"block",fontSize:13,fontWeight:700,color:"var(--gris)",marginBottom:5}}>{label}</label>{children}</div>;
+}
+
+function WeeklyTimetable({groups, profiles, onSelect, selectedId}){
+  const slots = useMemo(()=>{
+    const set = new Set(groups.map(g=>g.time_start));
+    return Array.from(set).sort();
+  },[groups]);
+  function cellGroups(day, slot){
+    return groups.filter(g=>g.day===day && g.time_start===slot);
+  }
+  return (
+    <div style={{overflowX:"auto"}}>
+      <table style={{minWidth:600}}>
+        <thead><tr><th style={{width:60}}>Hora</th>{DNF.map(d=><th key={d}>{d}</th>)}</tr></thead>
+        <tbody>
+          {slots.map(slot=>(
+            <tr key={slot}>
+              <td style={{fontWeight:700,color:"var(--azul-oscuro)",whiteSpace:"nowrap"}}>{slot}</td>
+              {DNF.map((_,i)=>{
+                const day = i+1;
+                const cellGs = cellGroups(day,slot);
+                return (
+                  <td key={day} style={{verticalAlign:"top",minWidth:130}}>
+                    {cellGs.map(g=>{
+                      const count = g.current_count||0;
+                      const full = count>=MAX;
+                      const selected = String(selectedId)===String(g.id);
+                      const inner = (
+                        <div style={{background: full?"#F0F0F0":"#fff", border:`2px solid ${selected?"var(--mostaza)":TM[g.teacher]||"#ddd"}`, borderRadius:10, padding:"6px 8px", marginBottom:6, opacity: full?0.6:1}}>
+                          <div style={{fontWeight:700,fontSize:13}}>{g.name}</div>
+                          <div style={{fontSize:11,color:TM[g.teacher]||"var(--gris)"}}>{g.teacher} · {g.time_start}-{g.time_end}</div>
+                          <div style={{fontSize:11,color: full? "var(--rojo)" : "var(--gris)"}}>{full?"Completa":`${count}/${MAX} plazas`}</div>
+                        </div>
+                      );
+                      return onSelect
+                        ? <div key={g.id} onClick={()=>!full && onSelect(g)} style={{cursor:full?"not-allowed":"pointer"}}>{inner}</div>
+                        : <div key={g.id} onClick={()=>onSelect && onSelect(g)}>{inner}</div>;
+                    })}
+                  </td>
+                );
+              })}
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }
 
-// ─── SHARED HEADER ───────────────────────────────────────────────────────────
-function Header({user,view,setView,tabs,onLogout}){
-  return(
-    <header style={{background:C.azulO,color:"#fff",padding:"10px 16px",display:"flex",alignItems:"center",justifyContent:"space-between",position:"sticky",top:0,zIndex:50,boxShadow:"0 2px 12px rgba(0,0,0,0.2)"}}>
-      <div style={{display:"flex",alignItems:"center",gap:10,flexShrink:0}}>
-        <Logo s={32}/><div><div style={{fontWeight:900,fontSize:14}}>CANVAS</div><div style={{fontSize:9,opacity:.7,letterSpacing:1,textTransform:"uppercase"}}>{user.displayName}</div></div>
-      </div>
-      <nav style={{display:"flex",gap:2,alignItems:"center",flexWrap:"wrap",justifyContent:"flex-end"}}>
-        {tabs.map(([k,l])=><button key={k} onClick={()=>setView(k)} style={{padding:"6px 10px",borderRadius:20,border:"none",cursor:"pointer",fontWeight:600,fontSize:11,background:view===k?"rgba(255,255,255,0.22)":"transparent",color:"#fff"}}>{l}</button>)}
-        <button onClick={onLogout} style={{padding:"6px 10px",borderRadius:20,border:"1px solid rgba(255,255,255,0.3)",cursor:"pointer",fontSize:11,background:"transparent",color:"rgba(255,255,255,0.7)",marginLeft:4}}>Salir</button>
-      </nav>
-    </header>
+
+function LoginScreen(){
+  const [mode,setMode] = useState("login"); // login | register
+  return (
+    <div className="container" style={{maxWidth:480,paddingTop:40}}>
+      <div style={{textAlign:"center",marginBottom:24}}><Logo size={56}/></div>
+      {mode==="login" ? <LoginForm onRegister={()=>setMode("register")}/> : <RegisterForm onBack={()=>setMode("login")}/>}
+    </div>
   );
 }
 
-// ─── CEO APP ─────────────────────────────────────────────────────────────────
-function CEOApp({user,users,groups,setGroups,sessions,setSessions,payments,expenses,setExpenses,validatePayment,onLogout}){
-  const [view,setView]=useState("dashboard");
-  const tabs=[["dashboard","📊 Dashboard"],["calendar","📅 Calendario"],["groups","🎨 Clases"],["payments","💳 Pagos"],["stats","📈 Estadísticas"]];
-  const p={groups,sessions,setSessions,users,payments,expenses,setExpenses,validatePayment,setGroups,role:'ceo'};
-  return(<div style={{minHeight:"100vh",background:C.bg}}><Header user={user} view={view} setView={setView} tabs={tabs} onLogout={onLogout}/><main style={{padding:16,maxWidth:1100,margin:"0 auto"}}>
-    {view==="dashboard"&&<CEODashboard {...p}/>}
-    {view==="calendar"&&<CalendarView {...p}/>}
-    {view==="groups"&&<GroupsView {...p}/>}
-    {view==="payments"&&<PaymentsView {...p}/>}
-    {view==="stats"&&<StatsView {...p}/>}
-  </main></div>);
+function LoginForm({onRegister}){
+  const [email,setEmail]=useState(""); const [password,setPassword]=useState("");
+  const [err,setErr]=useState(""); const [loading,setLoading]=useState(false);
+
+  async function submit(e){
+    e.preventDefault(); setErr(""); setLoading(true);
+    const {error} = await sb.auth.signInWithPassword({email:email.trim(), password});
+    setLoading(false);
+    if(error) setErr(error.message==="Invalid login credentials" ? "Email o contraseña incorrectos." : error.message);
+  }
+
+  return (
+    <div className="card">
+      <h2 style={{marginTop:0,color:"var(--azul-oscuro)"}}>¡Bienvenida de nuevo! 🎨</h2>
+      <form onSubmit={submit}>
+        <Field label="Email"><input type="email" required value={email} onChange={e=>setEmail(e.target.value)} placeholder="tu@email.com"/></Field>
+        <Field label="Contraseña"><input type="password" required value={password} onChange={e=>setPassword(e.target.value)}/></Field>
+        {err && <div className="err">{err}</div>}
+        <button className="btn-primary" style={{width:"100%",marginTop:8}} disabled={loading}>{loading?"Entrando…":"Entrar"}</button>
+      </form>
+      <div style={{textAlign:"center",marginTop:18,fontSize:14,color:"var(--gris)"}}>¿Primera vez en CANVAS?</div>
+      <button className="btn-primary" style={{width:"100%",marginTop:10,fontSize:17,padding:"14px 16px",background:"linear-gradient(135deg,var(--mostaza),#F5C542)",boxShadow:"0 4px 16px rgba(233,168,0,.4)"}} onClick={onRegister}>
+        🎨 ¡Inscríbete aquí!
+      </button>
+    </div>
+  );
 }
 
-// ─── CEO DASHBOARD ────────────────────────────────────────────────────────────
-function CEODashboard({groups,payments,expenses,setExpenses,users}){
-  const [showExp,setShowExp]=useState(false);
-  const [ef,setEf]=useState({concept:'',amount:'',month:CM,year:CY});
-  const activeG=groups.filter(g=>g.students.length>0);
-  const totalSt=groups.reduce((s,g)=>s+g.students.length,0);
-  const totalCap=activeG.length*MAX;
-  const occ=totalCap>0?Math.round((totalSt/totalCap)*100):0;
-  const expectedInc=groups.reduce((s,g)=>s+g.students.length*g.fee,0);
-  const curExp=expenses.filter(e=>e.month===CM&&e.year===CY).reduce((s,e)=>s+e.amount,0);
-  const curValidated=Object.entries(payments).filter(([k,p])=>{const pts=k.split('__');return parseInt(pts[1])===CY&&parseInt(pts[2])===CM&&p.status==='validated';}).reduce((s,[,p])=>s+(p.amount||0),0);
-  const balance=curValidated-curExp;
-  const studentUsers=Object.entries(users).filter(([,u])=>u.role==='student');
+function RegisterForm({onBack}){
+  const [groups,setGroups] = useState(null);
+  const [loadErr,setLoadErr] = useState("");
+  const [step,setStep] = useState("form"); // form | done
+  const [tempPw,setTempPw] = useState("");
+  const [err,setErr]=useState(""); const [loading,setLoading]=useState(false);
+  const [f,setF] = useState({
+    display_name:"", email:"", group_id:"", birthdate:"", guardian_name:"", guardian_phone:"",
+    guardian_email:"", payment_type:"monthly", preferred_payment_method:"transferencia", privacy_consent:false,
+    conditions_accepted:false, conditions_signature:""
+  });
 
-  // Alerts
-  const alerts=[];
-  const todayD=new Date().getDate();
-  const pending=Object.entries(payments).filter(([k,p])=>{const pts=k.split('__');return parseInt(pts[1])===CY&&parseInt(pts[2])===CM&&p.status==='pending';});
-  const uploaded=Object.entries(payments).filter(([k,p])=>{const pts=k.split('__');return parseInt(pts[1])===CY&&parseInt(pts[2])===CM&&p.status==='uploaded';});
-  if(todayD>5&&pending.length>0)alerts.push({t:'warn',msg:`⚠️ ${pending.length} alumno(s) sin justificante de pago este mes`});
-  if(uploaded.length>0)alerts.push({t:'info',msg:`📎 ${uploaded.length} justificante(s) pendiente(s) de validar`});
-  groups.filter(g=>g.students.length>0&&g.students.length/MAX<0.5).forEach(g=>alerts.push({t:'warn',msg:`📉 "${g.name}" (${DNF[g.day]} ${g.time}) al ${Math.round(g.students.length/MAX*100)}% de ocupación`}));
-  if(balance<0)alerts.push({t:'danger',msg:`🔴 Balance negativo este mes: ${balance}€`});
-  if(groups.some(g=>g.students.length>=MAX))alerts.push({t:'ok',msg:`✅ Hay clases al 100% — posible lista de espera`});
-
-  // History
-  const history=useMemo(()=>{
-    const mults=[0.62,0.68,0.74,0.79,0.85,0.90,1.0];
-    return [...Array(7)].map((_,i)=>{
-      let m=CM-6+i, y=CY; if(m<=0){m+=12;y--;}
-      const exp=expenses.filter(e=>e.month===m&&e.year===y).reduce((s,e)=>s+e.amount,0);
-      const inc=i===6?curValidated:Math.round(expectedInc*mults[i]);
-      return{label:`${MN[m-1].slice(0,3)}`,income:inc,expenses:exp,balance:inc-exp};
+  useEffect(()=>{
+    sb.from("groups").select("*").order("day").then(({data,error})=>{
+      if(error) setLoadErr(error.message);
+      setGroups(data||[]);
     });
-  },[expenses,curValidated,expectedInc]);
-  const maxV=Math.max(...history.map(h=>Math.max(h.income,h.expenses)),1);
+  },[]);
 
-  const addExp=()=>{if(!ef.concept||!ef.amount)return;setExpenses(p=>[...p,{id:Date.now(),...ef,amount:parseFloat(ef.amount)}]);setShowExp(false);setEf({concept:'',amount:'',month:CM,year:CY});};
-  const kpi=(label,val,sub,color,big=false)=>(
-    <div style={{background:C.card,borderRadius:12,padding:"16px 18px",boxShadow:"0 1px 6px rgba(0,0,0,0.07)",borderTop:`4px solid ${color}`}}>
-      <div style={{fontSize:10,color:C.muted,fontWeight:700,letterSpacing:.8,textTransform:"uppercase",marginBottom:6}}>{label}</div>
-      <div style={{fontSize:big?32:26,fontWeight:900,color}}>{val}</div>
-      {sub&&<div style={{fontSize:11,color:C.muted,marginTop:3}}>{sub}</div>}
-    </div>
-  );
+  function upd(k,v){ setF(prev=>({...prev,[k]:v})); }
 
-  return(
-    <div>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16,flexWrap:"wrap",gap:8}}>
-        <h2 style={{margin:0,color:C.azulO,fontWeight:900}}>Dashboard — {MN[CM-1]} {CY}</h2>
-        <button onClick={()=>setShowExp(true)} style={{padding:"7px 16px",background:C.mostaza,border:"none",borderRadius:20,color:"#fff",cursor:"pointer",fontWeight:700,fontSize:12}}>+ Añadir gasto</button>
+  async function submit(e){
+    e.preventDefault(); setErr("");
+    if(!f.privacy_consent){ setErr("Tienes que aceptar las condiciones de privacidad para continuar."); return; }
+    if(!f.conditions_accepted || !f.conditions_signature.trim()){ setErr("Tienes que leer y firmar las condiciones de la academia para continuar."); return; }
+    if(!f.group_id){ setErr("Elige una clase."); return; }
+    const group = groups.find(g=>String(g.id)===String(f.group_id));
+    if(group && group.current_count >= MAX){ setErr("Vaya, esa clase se acaba de completar. Elige otra, por favor."); return; }
+
+    setLoading(true);
+    const pw = genTempPassword();
+    const { data: signUpData, error: signUpErr } = await sb.auth.signUp({ email: f.email.trim(), password: pw });
+    if(signUpErr){
+      setLoading(false);
+      setErr(signUpErr.message.includes("already registered") ? "Ese email ya está registrado. Prueba a iniciar sesión." : signUpErr.message);
+      return;
+    }
+    const uid = signUpData.user?.id;
+    if(!uid){ setLoading(false); setErr("No se pudo crear la cuenta. Inténtalo de nuevo en unos segundos."); return; }
+
+    const fee = group.fee;
+    const enrollmentFee = isAugustNow ? 0 : STANDARD_ENROLLMENT_FEE;
+
+    const { error: profileErr } = await sb.from("profiles").insert({
+      id: uid, role:"student", display_name:f.display_name, group_id:group.id, fee,
+      payment_type:f.payment_type, birthdate: f.birthdate||null,
+      guardian_name:f.guardian_name, guardian_phone:f.guardian_phone, guardian_email:f.guardian_email,
+      preferred_payment_method:f.preferred_payment_method, student_status:"nuevo",
+      enrollment_month: MN[CM]+" "+CY, enrollment_fee: enrollmentFee, enrollment_fee_paid:false,
+      privacy_consent:true, privacy_consent_at: new Date().toISOString(),
+      conditions_accepted:true, conditions_signature:f.conditions_signature.trim(), conditions_accepted_at: new Date().toISOString()
+    });
+    setLoading(false);
+    if(profileErr){ setErr("Tu cuenta se creó pero hubo un problema guardando tus datos: "+profileErr.message+". Escríbenos y lo arreglamos."); return; }
+    setTempPw(pw); setStep("done");
+  }
+
+  if(groups===null) return <div className="card"><div className="loader"></div></div>;
+  if(loadErr) return <div className="card"><div className="err">No se pudo cargar el horario de clases: {loadErr}</div><button className="btn-ghost" style={{marginTop:10}} onClick={onBack}>← Volver</button></div>;
+  if(groups.length===0) return <div className="card"><div className="empty">Todavía no hay clases publicadas. Escríbenos y te inscribimos a mano mientras tanto.</div><button className="btn-ghost" style={{marginTop:10}} onClick={onBack}>← Volver</button></div>;
+
+  if(step==="done"){
+    return (
+      <div className="card" style={{textAlign:"center"}}>
+        <div style={{fontSize:40}}>🎉</div>
+        <h2 style={{color:"var(--azul-oscuro)"}}>¡Ya formas parte de CANVAS!</h2>
+        <p>Tu contraseña temporal es:</p>
+        <div style={{fontSize:22,fontWeight:800,background:"var(--fondo)",padding:12,borderRadius:10,letterSpacing:1}}>{tempPw}</div>
+        <p style={{fontSize:13,color:"var(--gris)"}}>Guárdala bien — podrás cambiarla más adelante desde tu perfil.</p>
+        <button className="btn-primary" style={{width:"100%",marginTop:10}} onClick={()=>window.location.reload()}>Ir a mi perfil</button>
       </div>
+    );
+  }
 
-      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(155px,1fr))",gap:12,marginBottom:20}}>
-        {kpi("Total alumnos",totalSt,`${activeG.length} grupos activos`,C.azulO)}
-        {kpi("Ocupación",`${occ}%`,occ>=80?"✅ Excelente":occ>=60?"🟡 En progreso":"🔴 Baja",occ>=80?"#1FA060":occ>=60?C.mostaza:"#e53935")}
-        {kpi("Ingresos validados",`${curValidated}€`,`Esperado: ${expectedInc}€`,C.mostaza)}
-        {kpi("Gastos del mes",`${curExp}€`,"Total registrado","#6C5CE7")}
-        {kpi("Balance",`${balance>=0?"+":""}${balance}€`,balance>=0?"✅ Positivo":"🔴 Negativo",balance>=0?"#1FA060":"#e53935",true)}
-      </div>
-
-      {alerts.length>0&&(
-        <div style={{background:C.card,borderRadius:12,padding:16,marginBottom:20,boxShadow:"0 1px 6px rgba(0,0,0,0.07)"}}>
-          <div style={{fontWeight:700,color:C.azulO,marginBottom:10,fontSize:14}}>🔔 Alertas automáticas</div>
-          {alerts.map((a,i)=><div key={i} style={{padding:"8px 12px",borderRadius:8,marginBottom:5,fontSize:13,background:a.t==='danger'?"#FFEBEE":a.t==='warn'?"#FFF8D5":a.t==='ok'?"#E0F7EC":"#E5EEFF",color:a.t==='danger'?"#c62828":a.t==='warn'?"#6a3800":a.t==='ok'?"#1FA060":C.azulO}}>{a.msg}</div>)}
+  return (
+    <div className="card">
+      {isAugustNow &&
+        <div style={{background:"var(--mostaza)",color:"#fff",borderRadius:12,padding:"10px 14px",marginBottom:14,fontWeight:700,textAlign:"center"}}>
+          🎨 ¿Te inscribes en agosto? ¡Te regalamos la matrícula!
         </div>
-      )}
-
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16,marginBottom:20}}>
-        {/* Chart */}
-        <div style={{background:C.card,borderRadius:12,padding:20,boxShadow:"0 1px 6px rgba(0,0,0,0.07)"}}>
-          <div style={{fontWeight:700,color:C.azulO,marginBottom:16,fontSize:14}}>📈 Evolución últimos 7 meses</div>
-          <div style={{display:"flex",alignItems:"flex-end",gap:6,height:120}}>
-            {history.map((h,i)=>(
-              <div key={i} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:2}}>
-                <div style={{width:"100%",display:"flex",gap:2,alignItems:"flex-end",height:90}}>
-                  <div style={{flex:1,background:C.mostaza,borderRadius:"3px 3px 0 0",height:`${Math.max(h.income/maxV*100,2)}%`}} title={`${h.income}€`}/>
-                  <div style={{flex:1,background:"#ef5350",borderRadius:"3px 3px 0 0",height:`${Math.max(h.expenses/maxV*100,2)}%`}} title={`${h.expenses}€`}/>
-                </div>
-                <div style={{fontSize:8,color:C.muted,textAlign:"center"}}>{h.label}</div>
-                <div style={{fontSize:8,fontWeight:700,color:h.balance>=0?"#1FA060":"#e53935"}}>{h.balance>0?"+":""}{h.balance}€</div>
-              </div>
+      }
+      <h2 style={{marginTop:0,color:"var(--azul-oscuro)"}}>Inscripción en CANVAS</h2>
+      <form onSubmit={submit}>
+        <Field label="Nombre completo del alumno/a"><input required value={f.display_name} onChange={e=>upd("display_name",e.target.value)}/></Field>
+        <Field label="Email (será tu usuario de acceso)"><input type="email" required value={f.email} onChange={e=>upd("email",e.target.value)}/></Field>
+        <Field label="Fecha de nacimiento"><input type="date" required value={f.birthdate} onChange={e=>upd("birthdate",e.target.value)}/></Field>
+        <Field label="Elige tu clase (toca sobre el horario)">
+          <WeeklyTimetable groups={groups} profiles={[]} onSelect={g=>upd("group_id",g.id)} selectedId={f.group_id}/>
+          {!f.group_id && <div style={{fontSize:12,color:"var(--gris)",marginTop:6}}>Toca una clase del horario de arriba para seleccionarla.</div>}
+          {f.group_id && (()=>{const g=groups.find(gg=>String(gg.id)===String(f.group_id)); return g && <div className="ok" style={{marginTop:6}}>Has elegido: {g.name} · {DNF[g.day-1]} {g.time_start}-{g.time_end} · {g.teacher}</div>;})()}
+        </Field>
+        <Field label="Nombre del adulto responsable"><input required value={f.guardian_name} onChange={e=>upd("guardian_name",e.target.value)}/></Field>
+        <div className="row">
+          <div className="col"><Field label="Teléfono de contacto"><input required value={f.guardian_phone} onChange={e=>upd("guardian_phone",e.target.value)}/></Field></div>
+          <div className="col"><Field label="Email de contacto (opcional)"><input type="email" value={f.guardian_email} onChange={e=>upd("guardian_email",e.target.value)}/></Field></div>
+        </div>
+        <Field label="Forma de pago">
+          <select value={f.preferred_payment_method} onChange={e=>upd("preferred_payment_method",e.target.value)}>
+            <option value="transferencia">Transferencia</option>
+            <option value="efectivo">Efectivo</option>
+          </select>
+        </Field>
+        <div style={{background:"var(--fondo)",border:"2px solid #D8E3F5",borderRadius:10,padding:14,marginBottom:12}}>
+          <div style={{fontWeight:800,color:"var(--azul-oscuro)",marginBottom:8}}>Condiciones de la academia</div>
+          <div style={{maxHeight:180,overflowY:"auto",fontSize:13,paddingRight:6}}>
+            {CONDITIONS_TEXT.map(([title,body],i)=>(
+              <div key={i} style={{marginBottom:8}}><b>{title}.</b> {body}</div>
             ))}
           </div>
-          <div style={{display:"flex",gap:16,marginTop:10,fontSize:11,color:C.muted}}>
-            <span><span style={{display:"inline-block",width:10,height:10,background:C.mostaza,borderRadius:2,marginRight:4}}/>Ingresos</span>
-            <span><span style={{display:"inline-block",width:10,height:10,background:"#ef5350",borderRadius:2,marginRight:4}}/>Gastos</span>
+          <label style={{display:"flex",gap:8,alignItems:"flex-start",marginTop:10}}>
+            <input type="checkbox" style={{width:"auto",marginTop:3}} checked={f.conditions_accepted} onChange={e=>upd("conditions_accepted",e.target.checked)}/>
+            <span style={{fontSize:13}}>He leído y acepto las condiciones de la academia.</span>
+          </label>
+          <Field label="Firma (nombre y apellidos del adulto responsable)">
+            <input value={f.conditions_signature} onChange={e=>upd("conditions_signature",e.target.value)} placeholder="Escribe tu nombre completo como firma"/>
+          </Field>
+        </div>
+        <div style={{background:"var(--fondo)",borderRadius:10,padding:12,fontSize:13,marginBottom:12}}>
+          <label style={{display:"flex",gap:8,alignItems:"flex-start"}}>
+            <input type="checkbox" style={{width:"auto",marginTop:3}} checked={f.privacy_consent} onChange={e=>upd("privacy_consent",e.target.checked)}/>
+            <span>He leído y acepto que los datos del menor (nombre completo y fecha de nacimiento) y del adulto responsable (nombre y contacto) se recogen con mi consentimiento y se usan exclusivamente para la gestión académica de CANVAS: organización de clases, control de asistencia, comunicación con la familia y facturación. La fecha de nacimiento se usa también para felicitar al alumno en su cumpleaños dentro de la app. No se cederán a terceros. Puedo solicitar la modificación o eliminación de estos datos escribiendo a <b>canvas.vall@gmail.com</b>.</span>
+          </label>
+        </div>
+        {err && <div className="err">{err}</div>}
+        <button className="btn-primary" style={{width:"100%"}} disabled={loading}>{loading?"Creando cuenta…":"Inscribirme"}</button>
+      </form>
+      <div style={{textAlign:"center",marginTop:14,fontSize:14}}>
+        <a href="#" onClick={e=>{e.preventDefault();onBack();}}>← Volver al acceso</a>
+      </div>
+    </div>
+  );
+}
+
+/* ============================================================
+   APP RAÍZ
+   ============================================================ */
+function App(){
+  const [session,setSession] = useState(undefined);
+  const [profile,setProfile] = useState(null);
+  const [loading,setLoading] = useState(true);
+
+  useEffect(()=>{
+    sb.auth.getSession().then(({data})=>setSession(data.session||null));
+    const {data:sub} = sb.auth.onAuthStateChange((_evt,sess)=>setSession(sess));
+    return ()=>sub.subscription.unsubscribe();
+  },[]);
+
+  useEffect(()=>{
+    if(session===undefined) return;
+    if(!session){ setProfile(null); setLoading(false); return; }
+    setLoading(true);
+    sb.from("profiles").select("*").eq("id",session.user.id).single().then(({data,error})=>{
+      setProfile(error? null : {...data, email:session.user.email});
+      setLoading(false);
+    });
+  },[session]);
+
+  const logout = ()=>sb.auth.signOut();
+
+  if(session===undefined || loading) return <LoadingScreen/>;
+  if(!session || !profile) return <LoginScreen/>;
+  if(profile.role==="ceo") return <CEOApp profile={profile} onLogout={logout}/>;
+  if(profile.role==="teacher") return <TeacherApp profile={profile} onLogout={logout}/>;
+  return <StudentApp profile={profile} onLogout={logout}/>;
+}
+
+function MySessionsPanel({profile,group}){
+  const [cancellations,setCancellations] = useState([]);
+  const [msg,setMsg] = useState("");
+  const occurrences = group ? nextOccurrences(group.day, 4) : [];
+
+  function load(){ sb.from("session_cancellations").select("*").eq("student_id",profile.id).then(({data})=>setCancellations(data||[])); }
+  useEffect(load,[group?.id]);
+
+  async function cancelSession(date){
+    setMsg("");
+    const {error} = await sb.from("session_cancellations").insert({student_id:profile.id, group_id:group.id, session_date:date});
+    if(error) setMsg(error.message);
+    else { setMsg("Te has dado de baja de esa clase. Ya tienes derecho a recuperarla."); load(); }
+  }
+
+  if(!group) return null;
+  return (
+    <div className="card" style={{marginBottom:14}}>
+      <h3 style={{marginTop:0}}>Mis próximas clases</h3>
+      {occurrences.map(date=>{
+        const cancelled = cancellations.some(c=>c.session_date===date);
+        const hrs = hoursUntil(date, group.time_start);
+        const canCancel = !cancelled && hrs>=5;
+        return (
+          <div key={date} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 0",borderBottom:"1px solid #EEF2F8"}}>
+            <span>{date} · {group.time_start}-{group.time_end}{cancelled && <span className="badge badge-warn" style={{marginLeft:8}}>Baja registrada</span>}</span>
+            {!cancelled && (
+              <button className="btn-ghost" disabled={!canCancel} onClick={()=>cancelSession(date)} title={!canCancel?"Ya quedan menos de 5 horas":""}>
+                Darme de baja
+              </button>
+            )}
           </div>
+        );
+      })}
+      {msg && <p className="ok">{msg}</p>}
+    </div>
+  );
+}
+
+function RecoveryBookingPanel({profile,groups}){
+  const [cancellations,setCancellations] = useState([]);
+  const [bookings,setBookings] = useState([]);
+  const [voucherCode,setVoucherCode] = useState("");
+  const [msg,setMsg] = useState("");
+
+  function load(){
+    sb.from("session_cancellations").select("*").eq("student_id",profile.id).then(({data})=>setCancellations(data||[]));
+    sb.from("session_bookings").select("*").eq("student_id",profile.id).is("cancelled_at",null).then(({data})=>setBookings(data||[]));
+  }
+  useEffect(load,[]);
+
+  const thisMonthCancellations = cancellations.filter(c=>{const d=new Date(c.session_date+"T00:00:00");return d.getFullYear()===CY&&d.getMonth()+1===CM;}).length;
+  const thisMonthRecoveries = bookings.filter(b=>{
+    if(b.booking_type!=="recovery") return false;
+    const d = new Date(b.session_date+"T00:00:00");
+    return d.getFullYear()===CY && d.getMonth()+1===CM;
+  }).length;
+  const recoveryCredits = Math.max(0, thisMonthCancellations - thisMonthRecoveries);
+
+  const upcomingSessions = useMemo(()=>{
+    const list=[];
+    groups.forEach(g=>{
+      if(g.id===profile.group_id) return;
+      nextOccurrences(g.day,2).forEach(date=> list.push({group:g,date}));
+    });
+    return list.filter(s=>hoursUntil(s.date,s.group.time_start)>=3 && (s.group.current_count||0)<MAX)
+                .sort((a,b)=> sessionDateTime(a.date,a.group.time_start) - sessionDateTime(b.date,b.group.time_start));
+  },[groups]);
+
+  const [selected,setSelected] = useState("");
+
+  async function bookRecovery(){
+    setMsg("");
+    if(!selected){ setMsg("Elige una sesión."); return; }
+    const s = upcomingSessions.find(u=>u.group.id+"::"+u.date===selected);
+    const {error} = await sb.from("session_bookings").insert({student_id:profile.id, group_id:s.group.id, session_date:s.date, booking_type:"recovery"});
+    if(error) setMsg(error.message); else { setMsg("¡Reservado! Nos vemos en esa clase."); load(); }
+  }
+
+  async function redeemVoucher(){
+    setMsg("");
+    if(!selected){ setMsg("Elige una sesión."); return; }
+    const {data:v} = await sb.from("gift_vouchers").select("*").eq("code",voucherCode.trim()).eq("paid",true).eq("redeemed",false).maybeSingle();
+    if(!v){ setMsg("Ese código de bono no es válido o ya se ha canjeado."); return; }
+    const s = upcomingSessions.find(u=>u.group.id+"::"+u.date===selected);
+    const {error} = await sb.from("session_bookings").insert({student_id:profile.id, group_id:s.group.id, session_date:s.date, booking_type:"voucher", voucher_id:v.id});
+    if(error){ setMsg(error.message); return; }
+    await sb.from("gift_vouchers").update({redeemed:true, redeemed_by:profile.display_name, redeemed_at:todayISO}).eq("id",v.id);
+    setMsg("¡Bono canjeado y clase reservada!"); setVoucherCode(""); load();
+  }
+
+  return (
+    <div className="card" style={{marginBottom:14}}>
+      <h3 style={{marginTop:0}}>Recuperar una clase o canjear un bono</h3>
+      <p style={{fontSize:13,color:"var(--gris)"}}>Créditos de recuperación disponibles este mes: <b>{recoveryCredits}</b>. Puedes reservar hasta 3 horas antes de la sesión.</p>
+      <select value={selected} onChange={e=>setSelected(e.target.value)}>
+        <option value="">Elige una clase con hueco…</option>
+        {upcomingSessions.map(s=>(
+          <option key={s.group.id+"::"+s.date} value={s.group.id+"::"+s.date}>
+            {s.date} · {s.group.time_start}-{s.group.time_end} · {s.group.name} ({s.group.teacher})
+          </option>
+        ))}
+      </select>
+      <div className="row" style={{marginTop:10}}>
+        <button className="btn-secondary" disabled={recoveryCredits<=0} onClick={bookRecovery}>Reservar como recuperación</button>
+      </div>
+      <div className="row" style={{marginTop:14,alignItems:"flex-end"}}>
+        <div className="col"><Field label="Código de bono regalo"><input value={voucherCode} onChange={e=>setVoucherCode(e.target.value)} placeholder="CANVAS-1234"/></Field></div>
+        <button className="btn-primary" onClick={redeemVoucher}>Canjear y reservar</button>
+      </div>
+      {msg && <p style={{fontSize:13,marginTop:8}}>{msg}</p>}
+    </div>
+  );
+}
+
+/* ============================================================
+   VISTA ALUMNO
+   ============================================================ */
+function StudentApp({profile,onLogout}){
+  const [group,setGroup] = useState(null);
+  const [allGroups,setAllGroups] = useState([]);
+  const [payments,setPayments] = useState([]);
+  const [file,setFile] = useState(null);
+  const [msg,setMsg] = useState("");
+
+  useEffect(()=>{
+    if(profile.group_id) sb.from("groups").select("*").eq("id",profile.group_id).single().then(({data})=>setGroup(data));
+    sb.from("groups").select("*").then(({data})=>setAllGroups(data||[]));
+    sb.from("payments").select("*").eq("student_id",profile.id).order("year",{ascending:false}).order("month",{ascending:false}).then(({data})=>setPayments(data||[]));
+  },[]);
+
+  const thisMonthPayment = payments.find(p=>p.year===CY && p.month===CM);
+
+  async function upload(){
+    if(!file){ setMsg("Elige un archivo primero."); return; }
+    setMsg("Subiendo…");
+    const path = `${profile.id}/${CY}-${CM}-${Date.now()}-${file.name}`;
+    const { error: upErr } = await sb.storage.from("receipts").upload(path, file);
+    if(upErr){ setMsg("Error al subir: "+upErr.message); return; }
+    const { error: payErr } = await sb.from("payments").upsert({
+      student_id:profile.id, year:CY, month:CM, status:"uploaded", filename:file.name,
+      file_path:path, amount:profile.fee, upload_date:todayISO
+    }, {onConflict:"student_id,year,month"});
+    if(payErr){ setMsg("Error guardando el pago: "+payErr.message); return; }
+    setMsg("¡Justificante subido! En cuanto lo validemos verás el estado actualizado.");
+    sb.from("payments").select("*").eq("student_id",profile.id).order("year",{ascending:false}).then(({data})=>setPayments(data||[]));
+  }
+
+  return (
+    <div>
+      <div className="topbar"><Logo size={30} dark={true}/><button className="btn-ghost" onClick={onLogout}>Salir</button></div>
+      <div className="container">
+        {isBirthday(profile.birthdate) && <BirthdayBanner name={profile.display_name}/>}
+        <div className="card" style={{marginBottom:14}}>
+          <h2 style={{marginTop:0,color:"var(--azul-oscuro)"}}>¡Hola, {profile.display_name.split(" ")[0]}! 👋</h2>
+          {group ? <p>Tu clase: <b>{group.name}</b> — {DNF[group.day-1]} {group.time_start}-{group.time_end} con <b style={{color:TM[group.teacher]}}>{group.teacher}</b></p> : <p>Aún no tienes clase asignada — escríbenos y te la asignamos.</p>}
+          {profile.enrollment_fee>0 && !profile.enrollment_fee_paid && <div className="badge badge-warn">Matrícula pendiente: {profile.enrollment_fee}€</div>}
         </div>
 
-        {/* Occupancy by class */}
-        <div style={{background:C.card,borderRadius:12,padding:20,boxShadow:"0 1px 6px rgba(0,0,0,0.07)"}}>
-          <div style={{fontWeight:700,color:C.azulO,marginBottom:12,fontSize:14}}>🎯 Ocupación por clase</div>
-          <div style={{maxHeight:200,overflowY:"auto"}}>
-            {activeG.map(g=>{
-              const pct=Math.round(g.students.length/MAX*100);
-              const col=pct>=100?"#e53935":pct>=75?"#1FA060":pct>=50?C.mostaza:"#64748b";
-              return(
-                <div key={g.id} style={{marginBottom:10}}>
-                  <div style={{display:"flex",justifyContent:"space-between",fontSize:11,marginBottom:3}}>
-                    <span style={{color:C.text,fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:"70%"}}>{g.name} · {DNF[g.day]}</span>
-                    <span style={{color:col,fontWeight:700,flexShrink:0}}>{g.students.length}/{MAX}</span>
-                  </div>
-                  <div style={{background:C.bg,borderRadius:20,height:7}}>
-                    <div style={{width:`${pct}%`,background:col,borderRadius:20,height:"100%",transition:"width .3s"}}/>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+        <MySessionsPanel profile={profile} group={group}/>
+        <RecoveryBookingPanel profile={profile} groups={allGroups}/>
+
+        <div className="card" style={{marginBottom:14}}>
+          <h3 style={{marginTop:0}}>Pago de este mes ({MN[CM]})</h3>
+          {thisMonthPayment?.status==="validated"
+            ? <span className="badge badge-ok">✓ Validado</span>
+            : thisMonthPayment?.status==="uploaded"
+              ? <span className="badge badge-warn">Justificante subido, pendiente de validar</span>
+              : <span className="badge badge-bad">Pendiente</span>}
+          <p style={{fontSize:14,marginTop:10}}>Cuota: <b>{profile.fee}€</b>. Transferencia al IBAN: <b>{IBAN}</b> (titular: Laura Sanz — concepto: {profile.display_name}).</p>
+          <input type="file" accept="image/*,.pdf" onChange={e=>setFile(e.target.files[0])}/>
+          <button className="btn-primary" style={{marginTop:8}} onClick={upload}>Subir justificante</button>
+          {msg && <p style={{fontSize:13,marginTop:6}}>{msg}</p>}
+        </div>
+
+        <div className="card">
+          <h3 style={{marginTop:0}}>Histórico de pagos</h3>
+          <table><thead><tr><th>Mes</th><th>Estado</th></tr></thead><tbody>
+            {payments.map(p=><tr key={p.id}><td>{MN[p.month]} {p.year}</td><td>
+              {p.status==="validated"?<span className="badge badge-ok">Validado</span>:p.status==="uploaded"?<span className="badge badge-warn">Subido</span>:<span className="badge badge-bad">Pendiente</span>}
+            </td></tr>)}
+          </tbody></table>
+          {payments.length===0 && <div className="empty">Aún no hay pagos registrados.</div>}
         </div>
       </div>
+    </div>
+  );
+}
 
-      {/* Expenses */}
-      <div style={{background:C.card,borderRadius:12,padding:20,boxShadow:"0 1px 6px rgba(0,0,0,0.07)"}}>
-        <div style={{fontWeight:700,color:C.azulO,marginBottom:12,fontSize:14}}>💸 Gastos {MN[CM-1]} {CY}</div>
-        {expenses.filter(e=>e.month===CM&&e.year===CY).length===0?<div style={{color:C.muted,fontSize:13}}>Sin gastos registrados.</div>
-          :expenses.filter(e=>e.month===CM&&e.year===CY).map(e=>(
-            <div key={e.id} style={{display:"flex",justifyContent:"space-between",padding:"7px 0",borderBottom:`1px solid ${C.border}`,fontSize:13}}>
-              <span>{e.concept}</span><span style={{fontWeight:700,color:"#e53935"}}>{e.amount}€</span>
+/* ============================================================
+   SESIÓN: PASAR LISTA
+   ============================================================ */
+function SessionModal({group, date, profiles, onClose}){
+  const roster = effectiveRoster(group, profiles);
+  const [status,setStatus] = useState({});
+  const [saving,setSaving] = useState(false);
+
+  useEffect(()=>{
+    sb.from("attendance").select("*").eq("group_id",group.id).eq("session_date",date).then(({data})=>{
+      const s={}; (data||[]).forEach(r=>s[r.student_name]=r.status); setStatus(s);
+    });
+  },[]);
+
+  async function save(){
+    setSaving(true);
+    const rows = roster.map(name=>({group_id:group.id, session_date:date, student_name:name, status:status[name]||"pr"}));
+    const {error} = await sb.from("attendance").upsert(rows,{onConflict:"group_id,session_date,student_name"});
+    setSaving(false);
+    if(!error) onClose();
+  }
+
+  return (
+    <div className="modal-bg" onClick={onClose}>
+      <div className="modal" onClick={e=>e.stopPropagation()}>
+        <h3 style={{marginTop:0}}>{group.name} — {date}</h3>
+        {roster.length===0 && <div className="empty">No hay alumnos en esta clase todavía.</div>}
+        {roster.map(name=>(
+          <div key={name} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 0",borderBottom:"1px solid #EEF2F8"}}>
+            <span>{name}</span>
+            <div className="row" style={{gap:6}}>
+              <button style={{padding:"6px 10px",background:status[name]==="pr"||!status[name]?"var(--verde)":"#eee",color:status[name]==="pr"||!status[name]?"#fff":"#999"}} onClick={()=>setStatus(s=>({...s,[name]:"pr"}))}>✓</button>
+              <button style={{padding:"6px 10px",background:status[name]==="ar"?"var(--mostaza)":"#eee",color:status[name]==="ar"?"#fff":"#999"}} onClick={()=>setStatus(s=>({...s,[name]:"ar"}))}>↩</button>
+              <button style={{padding:"6px 10px",background:status[name]==="ab"?"var(--rojo)":"#eee",color:status[name]==="ab"?"#fff":"#999"}} onClick={()=>setStatus(s=>({...s,[name]:"ab"}))}>✗</button>
+            </div>
+          </div>
+        ))}
+        <div className="row" style={{marginTop:16}}>
+          <button className="btn-ghost" onClick={onClose}>Cancelar</button>
+          <button className="btn-primary" onClick={save} disabled={saving}>{saving?"Guardando…":"Guardar asistencia"}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ============================================================
+   VISTA PROFESORA
+   ============================================================ */
+function TeacherApp({profile,onLogout}){
+  const [tab,setTab] = useState("mine");
+  const [groups,setGroups] = useState([]);
+  const [profiles,setProfiles] = useState([]);
+  const [session,setSession] = useState(null);
+
+  function load(){
+    sb.from("groups").select("*").order("day").then(({data})=>setGroups(data||[]));
+    sb.from("profiles").select("*").then(({data})=>setProfiles(data||[]));
+  }
+  useEffect(load,[]);
+
+  const myGroups = groups.filter(g=>g.teacher===profile.teacher_name);
+  const todayDow = ((NOW.getDay()+6)%7)+1; // 1=Lunes
+  const todayGroups = myGroups.filter(g=>g.day===todayDow);
+
+  const birthdaysToday = profiles.filter(p=>p.role==="student" && isBirthday(p.birthdate));
+
+  return (
+    <div>
+      <div className="topbar"><Logo size={30} dark={true}/><button className="btn-ghost" onClick={onLogout}>Salir</button></div>
+      <div className="container">
+        <h2 style={{color:"var(--azul-oscuro)"}}>Hola, {profile.display_name} 👋</h2>
+        {birthdaysToday.length>0 && (
+          <div className="card" style={{marginBottom:14,borderLeft:"4px solid var(--mostaza)"}}>
+            {birthdaysToday.map(b=><div key={b.id}>🎂 ¡Hoy es el cumpleaños de <b>{b.display_name}</b> ({ageFromBirthdate(b.birthdate)} años)!</div>)}
+          </div>
+        )}
+        <div className="tabs" style={{marginBottom:14}}>
+          <div className={"tab "+(tab==="mine"?"active":"")} onClick={()=>setTab("mine")}>Mis clases hoy</div>
+          <div className={"tab "+(tab==="all"?"active":"")} onClick={()=>setTab("all")}>Todas las clases</div>
+        </div>
+        {tab==="mine" && (
+          todayGroups.length===0 ? <div className="empty">Hoy no tienes clases 🎨</div> :
+          todayGroups.map(g=>(
+            <div key={g.id} className="card" style={{marginBottom:10,borderLeft:`4px solid ${TM[g.teacher]}`}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                <div><b>{g.name}</b> · {g.time_start}-{g.time_end} · {effectiveRoster(g,profiles).length}/{MAX} alumnos</div>
+                <button className="btn-secondary" onClick={()=>setSession({group:g,date:todayISO})}>Pasar lista hoy</button>
+              </div>
+            </div>
+          ))
+        )}
+        {tab==="all" && groups.map(g=>(
+          <div key={g.id} className="card" style={{marginBottom:10,borderLeft:`4px solid ${TM[g.teacher]}`}}>
+            <b>{DNF[g.day-1]}</b> {g.time_start}-{g.time_end} · {g.name} · {g.teacher} · {effectiveRoster(g,profiles).length}/{MAX}
+          </div>
+        ))}
+      </div>
+      {session && <SessionModal group={session.group} date={session.date} profiles={profiles} onClose={()=>{setSession(null);load();}}/>}
+    </div>
+  );
+}
+
+/* ============================================================
+   VISTA CEO — DASHBOARD
+   ============================================================ */
+function CEODashboard({groups,profiles,payments,expenses}){
+  const students = profiles.filter(p=>p.role==="student");
+  const totalStudents = groups.reduce((s,g)=>s+effectiveRoster(g,profiles).length,0);
+  const occupancy = groups.length? Math.round(100*groups.reduce((s,g)=>s+Math.min(effectiveRoster(g,profiles).length,MAX),0)/(groups.length*MAX)) : 0;
+  const validated = payments.filter(p=>p.year===CY&&p.month===CM&&p.status==="validated").reduce((s,p)=>s+(p.amount||0),0);
+  const pendingCount = students.filter(s=>!payments.some(p=>p.student_id===s.id&&p.year===CY&&p.month===CM&&p.status!=="pending")).length;
+  const monthExpenses = expenses.filter(e=>e.year===CY&&e.month===CM).reduce((s,e)=>s+e.amount,0);
+  const birthdaysToday = students.filter(p=>isBirthday(p.birthdate));
+  const lowOccupancy = groups.filter(g=>effectiveRoster(g,profiles).length<3);
+
+  return (
+    <div>
+      {birthdaysToday.length>0 && (
+        <div className="card" style={{marginBottom:14,borderLeft:"4px solid var(--mostaza)"}}>
+          {birthdaysToday.map(b=><div key={b.id}>🎂 ¡Hoy es el cumpleaños de <b>{b.display_name}</b> ({ageFromBirthdate(b.birthdate)} años)!</div>)}
+        </div>
+      )}
+      <div className="row">
+        <div className="col card"><div style={{fontSize:26,fontWeight:800}}>{totalStudents}</div><div style={{color:"var(--gris)"}}>Alumnos totales</div></div>
+        <div className="col card"><div style={{fontSize:26,fontWeight:800}}>{occupancy}%</div><div style={{color:"var(--gris)"}}>Ocupación</div></div>
+        <div className="col card"><div style={{fontSize:26,fontWeight:800,color:"var(--verde)"}}>{validated}€</div><div style={{color:"var(--gris)"}}>Ingresos validados ({MN[CM]})</div></div>
+        <div className="col card"><div style={{fontSize:26,fontWeight:800,color:"var(--rojo)"}}>{monthExpenses}€</div><div style={{color:"var(--gris)"}}>Gastos ({MN[CM]})</div></div>
+      </div>
+      <div className="card" style={{marginTop:14}}>
+        <h3 style={{marginTop:0}}>Alertas</h3>
+        {pendingCount>0 && <div className="badge badge-warn" style={{marginRight:8,marginBottom:6}}>{pendingCount} alumnos sin pago este mes</div>}
+        {lowOccupancy.length>0 && <div className="badge badge-bad" style={{marginBottom:6}}>{lowOccupancy.length} clases con baja ocupación</div>}
+        {pendingCount===0 && lowOccupancy.length===0 && <div style={{color:"var(--verde)"}}>Todo en orden ✓</div>}
+      </div>
+    </div>
+  );
+}
+
+/* ============================================================
+   VISTA CEO — GRUPOS
+   ============================================================ */
+function GroupsView({groups,profiles,reload}){
+  const [editing,setEditing] = useState(null);
+  const [studentsText,setStudentsText] = useState("");
+  async function save(g){
+    const legacyStudents = studentsText.split(",").map(s=>s.trim()).filter(Boolean);
+    const registeredCount = profiles.filter(p=>p.role==="student" && p.group_id===g.id).length;
+    const toSave = {...g, students: legacyStudents, current_count: legacyStudents.length + registeredCount};
+    if(g.id){ await sb.from("groups").update(toSave).eq("id",g.id); }
+    else { await sb.from("groups").insert(toSave); }
+    setEditing(null); reload();
+  }
+  function openEdit(g){ setStudentsText((g.students||[]).join(", ")); setEditing(g); }
+  return (
+    <div>
+      <button className="btn-primary" style={{marginBottom:12}} onClick={()=>openEdit({name:"",day:1,time_start:"17:00",time_end:"18:00",teacher:TEACHERS[0],level:"",fee:50,students:[]})}>+ Nueva clase</button>
+      <div className="card" style={{marginBottom:16}}>
+        <h4 style={{marginTop:0,color:"var(--azul-oscuro)"}}>Horario semanal</h4>
+        <WeeklyTimetable groups={groups} profiles={profiles} onSelect={openEdit}/>
+      </div>
+      {DNF.map((dn,i)=>(
+        <div key={i} style={{marginBottom:14}}>
+          <h4 style={{color:"var(--azul-oscuro)"}}>{dn}</h4>
+          {groups.filter(g=>g.day===i+1).map(g=>(
+            <div key={g.id} className="card" style={{marginBottom:8,borderLeft:`4px solid ${TM[g.teacher]||"#ccc"}`,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+              <div>{g.time_start}-{g.time_end} · <b>{g.name}</b> · {g.teacher} {g.level && `(${g.level})`} · {effectiveRoster(g,profiles).length}/{MAX} · {g.fee}€</div>
+              <button className="btn-ghost" onClick={()=>openEdit(g)}>Editar</button>
             </div>
           ))}
-        <div style={{display:"flex",justifyContent:"space-between",padding:"10px 0 0",fontWeight:700,fontSize:14}}>
-          <span>Total</span><span style={{color:"#e53935"}}>{curExp}€</span>
         </div>
-      </div>
-
-      {showExp&&(
-        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.45)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000}}>
-          <div style={{background:C.card,borderRadius:16,padding:24,width:360,maxWidth:"95vw",boxShadow:"0 8px 40px rgba(0,0,0,0.25)"}}>
-            <div style={{display:"flex",justifyContent:"space-between",marginBottom:16}}><h3 style={{margin:0,color:C.azulO}}>Añadir gasto</h3><button onClick={()=>setShowExp(false)} style={{background:"none",border:"none",fontSize:20,cursor:"pointer",color:C.muted}}>✕</button></div>
-            {[["Concepto","concept","text","Ej: Alquiler"],["Importe (€)","amount","number","0"]].map(([l,k,t,ph])=>(
-              <div key={k}><label style={{display:"block",color:C.muted,fontSize:11,fontWeight:700,marginBottom:4,letterSpacing:.8,textTransform:"uppercase"}}>{l}</label>
-              <input type={t} value={ef[k]} onChange={e=>setEf(p=>({...p,[k]:e.target.value}))} placeholder={ph} style={{width:"100%",padding:"9px 12px",background:C.bg,border:`1px solid ${C.border}`,borderRadius:8,color:C.text,fontSize:14,marginBottom:12,boxSizing:"border-box",outline:"none"}}/></div>
-            ))}
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:16}}>
-              {[["Mes","month"],["Año","year"]].map(([l,k])=>(
-                <div key={k}><label style={{display:"block",color:C.muted,fontSize:11,fontWeight:700,marginBottom:4,letterSpacing:.8,textTransform:"uppercase"}}>{l}</label>
-                <input type="number" value={ef[k]} onChange={e=>setEf(p=>({...p,[k]:parseInt(e.target.value)}))} style={{width:"100%",padding:"9px 12px",background:C.bg,border:`1px solid ${C.border}`,borderRadius:8,color:C.text,fontSize:14,boxSizing:"border-box",outline:"none"}}/></div>
-              ))}
+      ))}
+      {editing && (
+        <div className="modal-bg" onClick={()=>setEditing(null)}>
+          <div className="modal" onClick={e=>e.stopPropagation()}>
+            <h3 style={{marginTop:0}}>{editing.id?"Editar clase":"Nueva clase"}</h3>
+            <Field label="Nombre"><input value={editing.name} onChange={e=>setEditing({...editing,name:e.target.value})}/></Field>
+            <div className="row">
+              <div className="col"><Field label="Día"><select value={editing.day} onChange={e=>setEditing({...editing,day:parseInt(e.target.value)})}>{DNF.map((d,i)=><option key={i} value={i+1}>{d}</option>)}</select></Field></div>
+              <div className="col"><Field label="Profesora"><select value={editing.teacher} onChange={e=>setEditing({...editing,teacher:e.target.value})}>{TEACHERS.map(t=><option key={t}>{t}</option>)}</select></Field></div>
             </div>
-            <div style={{display:"flex",gap:8}}>
-              <button onClick={()=>setShowExp(false)} style={{flex:1,padding:10,background:C.bg,border:`1px solid ${C.border}`,borderRadius:9,cursor:"pointer",fontWeight:600}}>Cancelar</button>
-              <button onClick={addExp} style={{flex:1,padding:10,background:C.azulO,border:"none",borderRadius:9,color:"#fff",cursor:"pointer",fontWeight:700}}>Guardar</button>
+            <div className="row">
+              <div className="col"><Field label="Inicio"><input type="time" value={editing.time_start} onChange={e=>setEditing({...editing,time_start:e.target.value})}/></Field></div>
+              <div className="col"><Field label="Fin"><input type="time" value={editing.time_end} onChange={e=>setEditing({...editing,time_end:e.target.value})}/></Field></div>
             </div>
+            <Field label="Nivel/edad (opcional)"><input value={editing.level||""} onChange={e=>setEditing({...editing,level:e.target.value})}/></Field>
+            <Field label="Cuota mensual (€)"><input type="number" value={editing.fee} onChange={e=>setEditing({...editing,fee:parseFloat(e.target.value)})}/></Field>
+            <Field label="Alumnos que no se han inscrito por la app (separados por coma)"><textarea rows={3} value={studentsText} onChange={e=>setStudentsText(e.target.value)}/></Field>
+            <div className="row"><button className="btn-ghost" onClick={()=>setEditing(null)}>Cancelar</button><button className="btn-primary" onClick={()=>save(editing)}>Guardar</button></div>
           </div>
         </div>
       )}
@@ -359,471 +821,270 @@ function CEODashboard({groups,payments,expenses,setExpenses,users}){
   );
 }
 
-// ─── PAYMENTS VIEW ────────────────────────────────────────────────────────────
-function PaymentsView({payments,validatePayment,users,groups}){
-  const [sm,setSm]=useState(CM),[sy,setSy]=useState(CY);
-  const students=Object.entries(users).filter(([,u])=>u.role==='student');
-  const getP=email=>payments[pk(email,sy,sm)];
-  const sb=s=>({pending:{bg:"#FFEBEE",c:"#e53935",icon:"⏳",label:"Pendiente"},uploaded:{bg:"#FFF8D5",c:C.mostaza,icon:"📎",label:"Subido"},validated:{bg:"#E0F7EC",c:"#1FA060",icon:"✅",label:"Validado"}}[s]||{bg:"#FFEBEE",c:"#e53935",icon:"⏳",label:"Pendiente"});
-  return(
+/* ============================================================
+   VISTA CEO — PAGOS
+   ============================================================ */
+function PaymentsView({profiles,payments,reload}){
+  const students = profiles.filter(p=>p.role==="student");
+  async function validate(studentId){
+    await sb.from("payments").update({status:"validated",validated_date:todayISO}).eq("student_id",studentId).eq("year",CY).eq("month",CM);
+    reload();
+  }
+  async function view(path){
+    const {data} = await sb.storage.from("receipts").createSignedUrl(path,3600);
+    if(data) window.open(data.signedUrl,"_blank");
+  }
+  return (
+    <table><thead><tr><th>Alumno</th><th>Cuota</th><th>Estado</th><th>Justificante</th><th></th></tr></thead>
+    <tbody>
+      {students.map(s=>{
+        const p = payments.find(pp=>pp.student_id===s.id&&pp.year===CY&&pp.month===CM);
+        return <tr key={s.id}>
+          <td>{s.display_name}</td><td>{s.fee}€</td>
+          <td>{p?.status==="validated"?<span className="badge badge-ok">Validado</span>:p?.status==="uploaded"?<span className="badge badge-warn">Subido</span>:<span className="badge badge-bad">Pendiente</span>}</td>
+          <td>{p?.file_path && <a href="#" onClick={e=>{e.preventDefault();view(p.file_path);}}>Ver</a>}</td>
+          <td>{p?.status==="uploaded" && <button className="btn-secondary" onClick={()=>validate(s.id)}>Validar</button>}</td>
+        </tr>;
+      })}
+    </tbody></table>
+  );
+}
+
+/* ============================================================
+   VISTA CEO — ESTADÍSTICAS
+   ============================================================ */
+function StatsView({groups,profiles,attendance}){
+  const roster = [];
+  groups.forEach(g=>effectiveRoster(g,profiles).forEach(name=>roster.push({name,group:g.name})));
+  function counts(name){
+    const rows = attendance.filter(a=>a.student_name===name);
+    return { pr: rows.filter(r=>r.status==="pr").length, ar: rows.filter(r=>r.status==="ar").length, ab: rows.filter(r=>r.status==="ab").length };
+  }
+  return (
+    <table><thead><tr><th>Alumno</th><th>Clase</th><th>Presencias</th><th>Recup.</th><th>Ausencias</th></tr></thead>
+    <tbody>{roster.map((r,i)=>{const c=counts(r.name);const total=c.pr+c.ar+c.ab;return <tr key={i}><td>{r.name}</td><td>{r.group}</td><td>{c.pr}</td><td>{c.ar}</td><td>{c.ab}{total>0 && ` (${Math.round(100*c.pr/total)}%)`}</td></tr>;})}</tbody></table>
+  );
+}
+
+/* ============================================================
+   VISTA CEO — PAGO A PROFESORAS (horas + incentivo)
+   ============================================================ */
+function TeacherPayView({groups,attendance,rates,tiers}){
+  const sessions = useMemo(()=>{
+    const seen = {};
+    attendance.forEach(a=>{
+      const d = new Date(a.session_date+"T00:00:00");
+      if(d.getFullYear()!==CY || d.getMonth()+1!==CM) return;
+      const key = a.group_id+"::"+a.session_date;
+      seen[key] = true;
+    });
+    return Object.keys(seen).map(k=>{ const [gid,date]=k.split("::"); return {gid:parseInt(gid),date}; });
+  },[attendance]);
+
+  function hoursOf(g){
+    const [h1,m1]=g.time_start.split(":").map(Number), [h2,m2]=g.time_end.split(":").map(Number);
+    return ((h2*60+m2)-(h1*60+m1))/60;
+  }
+  function tierBonus(n){
+    const t = tiers.find(t=>n>=t.min_students && n<=t.max_students);
+    return t? t.bonus_per_hour : 0;
+  }
+
+  const byTeacher = {};
+  sessions.forEach(s=>{
+    const g = groups.find(gg=>gg.id===s.gid); if(!g) return;
+    const hours = hoursOf(g);
+    const rate = rates.find(r=>r.teacher_name===g.teacher)?.rate_per_hour || 0;
+    const bonus = tierBonus(g.current_count||0);
+    byTeacher[g.teacher] = byTeacher[g.teacher] || {hours:0,total:0,sessions:0};
+    byTeacher[g.teacher].hours += hours;
+    byTeacher[g.teacher].sessions += 1;
+    byTeacher[g.teacher].total += hours*(rate+bonus);
+  });
+
+  return (
     <div>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16,flexWrap:"wrap",gap:8}}>
-        <h2 style={{margin:0,color:C.azulO}}>Gestión de pagos</h2>
-        <div style={{display:"flex",gap:8}}>
-          <select value={sm} onChange={e=>setSm(parseInt(e.target.value))} style={{padding:"6px 10px",border:`1px solid ${C.border}`,borderRadius:8,color:C.text,background:C.card,fontSize:13}}>
-            {MN.map((m,i)=><option key={i} value={i+1}>{m}</option>)}
-          </select>
-          <select value={sy} onChange={e=>setSy(parseInt(e.target.value))} style={{padding:"6px 10px",border:`1px solid ${C.border}`,borderRadius:8,color:C.text,background:C.card,fontSize:13}}>
-            {[2025,2026].map(y=><option key={y} value={y}>{y}</option>)}
-          </select>
-        </div>
-      </div>
-      {students.length===0?<div style={{background:C.card,borderRadius:12,padding:40,textAlign:"center",color:C.muted}}>No hay alumnos registrados.</div>
-        :<div style={{background:C.card,borderRadius:12,overflow:"auto",boxShadow:"0 1px 6px rgba(0,0,0,0.07)"}}>
-          <table style={{width:"100%",borderCollapse:"collapse",minWidth:500}}>
-            <thead><tr style={{background:C.azulO,color:"#fff"}}>
-              {["Alumno","Clase","Cuota","Estado","Archivo","Acción"].map((h,i)=><th key={i} style={{padding:"10px 14px",textAlign:"left",fontWeight:700,fontSize:11}}>{h}</th>)}
-            </tr></thead>
-            <tbody>
-              {students.map(([email,u],si)=>{
-                const pay=getP(email), status=pay?.status||'pending', info=sb(status);
-                const grp=groups.find(g=>g.id===u.groupId);
-                return(
-                  <tr key={email} style={{background:si%2===0?C.bg:C.card,borderBottom:`1px solid ${C.border}`}}>
-                    <td style={{padding:"11px 14px",fontWeight:600,fontSize:13}}>{u.displayName}</td>
-                    <td style={{padding:"11px 14px",color:C.muted,fontSize:12}}>{grp?`${grp.name} · ${DNF[grp.day]}`:"—"}</td>
-                    <td style={{padding:"11px 14px",fontWeight:700,color:C.azulO}}>{u.fee}€</td>
-                    <td style={{padding:"11px 14px"}}><span style={{display:"inline-flex",alignItems:"center",gap:4,padding:"3px 10px",borderRadius:20,background:info.bg,color:info.c,fontWeight:700,fontSize:12}}>{info.icon} {info.label}</span></td>
-                    <td style={{padding:"11px 14px",fontSize:12,color:C.muted}}>{pay?.filename||"—"}</td>
-                    <td style={{padding:"11px 14px"}}>{status==='uploaded'&&<button onClick={()=>validatePayment(pk(email,sy,sm))} style={{padding:"6px 14px",background:"#1FA060",border:"none",borderRadius:8,color:"#fff",cursor:"pointer",fontWeight:700,fontSize:12}}>✅ Validar</button>}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>}
+      <p style={{fontSize:13,color:"var(--gris)"}}>Calculado a partir de las sesiones con asistencia registrada en {MN[CM]} {CY}. Tarifa + incentivo según nº de alumnos de cada clase.</p>
+      <table><thead><tr><th>Profesora</th><th>Sesiones</th><th>Horas</th><th>Total a pagar</th></tr></thead>
+      <tbody>{TEACHERS.map(t=>{const d=byTeacher[t]||{hours:0,total:0,sessions:0};return <tr key={t}><td>{t}</td><td>{d.sessions}</td><td>{d.hours.toFixed(1)}h</td><td><b>{d.total.toFixed(2)}€</b></td></tr>;})}</tbody></table>
     </div>
   );
 }
 
-// ─── TEACHER APP ──────────────────────────────────────────────────────────────
-function TeacherApp({user,groups,setGroups,sessions,setSessions,onLogout}){
-  const [view,setView]=useState("mine");
-  const tabs=[["mine","📅 Mis clases"],["all","🗺️ Todas las clases"]];
-  const myGs=groups.filter(g=>g.teacher===user.teacher);
-  const [sessCtx,setSessCtx]=useState(null);
-  const sk=(gid,dt)=>`${gid}::${dt}`;
-  const gSess=(gid,dt)=>sessions[sk(gid,dt)];
-  const saveSess=(gid,dt,att)=>{setSessions(p=>({...p,[sk(gid,dt)]:{att}}));setSessCtx(null);};
-  const getMonthlyRec=name=>{const now=new Date(),ny=now.getFullYear(),nm=now.getMonth()+1;return Object.entries(sessions).filter(([k,s])=>{const dt=k.split("::")[1];if(!dt)return false;const[y,m]=dt.split("-").map(Number);return y===ny&&m===nm&&s.att?.[name]==="ar";}).length;};
-  const m=TM[user.teacher]||TM["?"];
-  const todayStr=new Date().toISOString().split('T')[0];
-  return(
-    <div style={{minHeight:"100vh",background:C.bg}}>
-      <Header user={user} view={view} setView={setView} tabs={tabs} onLogout={onLogout}/>
-      <main style={{padding:16,maxWidth:1100,margin:"0 auto"}}>
-        {view==="mine"&&(
-          <div>
-            <h2 style={{margin:"0 0 16px",color:C.azulO}}>Mis clases — <span style={{color:m.c}}>{user.teacher}</span></h2>
-            {myGs.length===0?<div style={{background:C.card,borderRadius:12,padding:40,textAlign:"center",color:C.muted}}>No tienes clases asignadas.</div>
-              :myGs.map(g=>{
-                const sess=gSess(g.id,todayStr),att=sess?.att||{},done=Object.keys(att).length>0,pr=Object.values(att).filter(x=>x==="pr").length;
-                return(
-                  <div key={g.id} style={{background:C.card,borderRadius:12,padding:20,marginBottom:14,boxShadow:"0 1px 6px rgba(0,0,0,0.07)",borderTop:`4px solid ${m.c}`}}>
-                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:12}}>
-                      <div>
-                        <div style={{fontWeight:700,fontSize:17}}>{g.name}{g.level&&<span style={{fontWeight:400,color:C.muted,fontSize:13}}> ({g.level})</span>}</div>
-                        <div style={{color:C.muted,fontSize:13,marginTop:4}}>{DNF[g.day]} · {g.time}–{g.end} · <strong style={{color:m.c}}>{g.students.length}/{MAX}</strong> alumnos</div>
-                      </div>
-                      <button onClick={()=>setSessCtx({group:g,dateStr:todayStr})} style={{padding:"8px 16px",background:done?"#1FA060":C.azulO,border:"none",borderRadius:8,color:"#fff",cursor:"pointer",fontWeight:700,fontSize:12,flexShrink:0}}>
-                        {done?`✓ Lista (${pr}/${g.students.length})`:"Pasar lista hoy"}
-                      </button>
-                    </div>
-                    {g.students.length>0&&<div style={{borderTop:`1px solid ${C.border}`,paddingTop:10}}>
-                      <div style={{fontSize:11,color:C.muted,fontWeight:700,letterSpacing:.5,marginBottom:6}}>ALUMNOS</div>
-                      <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
-                        {g.students.map(s=><span key={s} style={{padding:"3px 10px",background:m.bg,color:m.tx,borderRadius:20,fontSize:12,fontWeight:600}}>{s}</span>)}
-                      </div>
-                    </div>}
-                  </div>
-                );
-              })}
-          </div>
-        )}
-        {view==="all"&&(
-          <div>
-            <h2 style={{margin:"0 0 4px",color:C.azulO}}>Todas las clases</h2>
-            <p style={{color:C.muted,fontSize:13,marginBottom:16}}>Tus clases en modo edición · el resto en modo lectura.</p>
-            {[1,2,3,4,5].map(dow=>{
-              const dg=groups.filter(g=>g.day===dow).sort((a,b)=>a.time.localeCompare(b.time));
-              if(!dg.length)return null;
-              return(
-                <div key={dow} style={{marginBottom:18}}>
-                  <h3 style={{margin:"0 0 10px",color:C.azulO,fontSize:15,fontWeight:800,paddingBottom:6,borderBottom:`2px solid ${C.border}`}}>{DNF[dow]}</h3>
-                  <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(250px,1fr))",gap:10}}>
-                    {dg.map(g=>{const tm=TM[g.teacher]||TM["?"],mine=g.teacher===user.teacher;return(
-                      <div key={g.id} style={{background:C.card,borderRadius:10,padding:14,borderTop:`4px solid ${mine?tm.c:"#ddd"}`,boxShadow:"0 1px 4px rgba(0,0,0,0.06)"}}>
-                        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
-                          <div>
-                            <div style={{fontWeight:700,fontSize:14}}>{g.name}{mine&&<span style={{marginLeft:6,fontSize:9,background:tm.bg,color:tm.c,padding:"1px 6px",borderRadius:8,fontWeight:700}}>MÍA</span>}</div>
-                            {g.level&&<div style={{fontSize:11,color:C.muted,marginTop:1}}>{g.level}</div>}
-                            <div style={{fontSize:12,color:C.muted,marginTop:4}}>{g.time}–{g.end} · <span style={{color:tm.c,fontWeight:700}}>{g.teacher}</span></div>
-                          </div>
-                          <div style={{textAlign:"right",flexShrink:0}}>
-                            <div style={{fontWeight:700,fontSize:14,color:g.students.length>=MAX?"#e53935":g.students.length/MAX>=0.75?C.mostaza:"#1FA060"}}>{g.students.length}/{MAX}</div>
-                            <div style={{fontSize:10,color:C.muted}}>alumnos</div>
-                          </div>
-                        </div>
-                        {mine&&g.students.length>0&&<div style={{borderTop:`1px solid ${C.border}`,marginTop:10,paddingTop:8,fontSize:11,color:C.muted,lineHeight:1.8}}>{g.students.join(" · ")}</div>}
-                      </div>
-                    );})}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </main>
-      {sessCtx&&<SessionModal group={sessCtx.group} dateStr={sessCtx.dateStr} existing={gSess(sessCtx.group.id,sessCtx.dateStr)} monthlyRec={Object.fromEntries(sessCtx.group.students.map(s=>[s,getMonthlyRec(s)]))} onSave={saveSess} onClose={()=>setSessCtx(null)}/>}
-    </div>
-  );
-}
+/* ============================================================
+   VISTA CEO — TALLERES Y CAMPAMENTOS
+   ============================================================ */
+function WorkshopsView(){
+  const [workshops,setWorkshops] = useState([]);
+  const [regs,setRegs] = useState([]);
+  const [editing,setEditing] = useState(null);
 
-// ─── STUDENT APP ──────────────────────────────────────────────────────────────
-function StudentApp({user,groups,payments,uploadPayment,onLogout}){
-  const [view,setView]=useState("profile");
-  const tabs=[["profile","👤 Mi perfil"],["schedule","📅 Horarios"]];
-  const myGroup=groups.find(g=>g.id===user.groupId);
-  const pay=payments[pk(user.email,CY,CM)];
-  const status=pay?.status||'pending';
-  const sinfo={pending:{color:"#e53935",bg:"#FFEBEE",icon:"⏳",label:"Pendiente de pago",msg:"Por favor, realiza la transferencia y sube tu justificante antes del día 5 del mes."},uploaded:{color:C.mostaza,bg:"#FFF8D5",icon:"📎",label:"Justificante enviado",msg:"Tu justificante está siendo revisado. Te confirmaremos en breve."},validated:{color:"#1FA060",bg:"#E0F7EC",icon:"✅",label:"Pago confirmado ✅",msg:"Tu pago de este mes está validado. ¡Gracias por ser parte de CANVAS!"}}[status];
-  const fileRef=useRef();
-  const handleFile=e=>{const f=e.target.files[0];if(f)uploadPayment(user.email,f.name,user.fee);};
-  const m=myGroup?TM[myGroup.teacher]||TM["?"]:null;
-  return(
-    <div style={{minHeight:"100vh",background:C.bg}}>
-      <Header user={user} view={view} setView={setView} tabs={tabs} onLogout={onLogout}/>
-      <main style={{padding:16,maxWidth:700,margin:"0 auto"}}>
-        {view==="profile"&&(
-          <div>
-            <div style={{background:C.card,borderRadius:16,padding:24,marginBottom:16,boxShadow:"0 1px 6px rgba(0,0,0,0.07)"}}>
-              <div style={{display:"flex",alignItems:"center",gap:14,marginBottom:myGroup?16:0}}>
-                <div style={{width:56,height:56,borderRadius:"50%",background:C.azulO,display:"flex",alignItems:"center",justifyContent:"center",fontSize:22,color:"#fff",fontWeight:900,flexShrink:0}}>{user.displayName[0]}</div>
-                <div><h2 style={{margin:0,color:C.azulO,fontSize:20}}>{user.displayName}</h2><div style={{color:C.muted,fontSize:13,marginTop:2}}>{user.email}</div></div>
-              </div>
-              {myGroup&&m&&<div style={{padding:"12px 16px",background:m.bg,borderRadius:10,borderLeft:`4px solid ${m.c}`}}>
-                <div style={{fontWeight:700,fontSize:15}}>{myGroup.name}{myGroup.level&&<span style={{fontWeight:400,fontSize:13,color:C.muted}}> ({myGroup.level})</span>}</div>
-                <div style={{fontSize:13,color:C.muted,marginTop:3}}>{DNF[myGroup.day]} · {myGroup.time}–{myGroup.end} · <span style={{color:m.c,fontWeight:700}}>{myGroup.teacher}</span></div>
-                <div style={{fontSize:12,color:C.muted,marginTop:2}}>Cuota: <strong>{user.fee}€</strong>/mes · Pago {user.paymentType==='monthly'?"mensual":"trimestral"}</div>
-              </div>}
-            </div>
-            <div style={{background:sinfo.bg,borderRadius:16,padding:24,boxShadow:"0 1px 6px rgba(0,0,0,0.07)",border:`2px solid ${sinfo.color}30`}}>
-              <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:12}}>
-                <span style={{fontSize:36}}>{sinfo.icon}</span>
-                <div><div style={{fontWeight:800,fontSize:18,color:sinfo.color}}>{sinfo.label}</div><div style={{fontSize:12,color:C.muted}}>{MN[CM-1]} {CY}</div></div>
-              </div>
-              <p style={{color:C.text,fontSize:14,marginBottom:16,lineHeight:1.5}}>{sinfo.msg}</p>
-              {status==='pending'&&(
-                <>
-                  <input ref={fileRef} type="file" accept=".pdf,.jpg,.jpeg,.png" style={{display:"none"}} onChange={handleFile}/>
-                  <button onClick={()=>fileRef.current.click()} style={{padding:"13px 24px",background:C.azulO,border:"none",borderRadius:10,color:"#fff",cursor:"pointer",fontWeight:700,fontSize:15,width:"100%"}}>📎 Subir justificante de pago</button>
-                  <div style={{marginTop:10,fontSize:12,color:C.muted,textAlign:"center"}}>Transferencia · IBAN ES28 2095 5458 3091 2197 7329<br/>Concepto: tu nombre + {MN[CM-1]}</div>
-                </>
-              )}
-              {status==='uploaded'&&<div style={{padding:"10px 14px",background:"rgba(255,255,255,0.6)",borderRadius:8,fontSize:13,color:C.muted}}>📎 <strong>{pay.filename}</strong> · Subido el {pay.uploadDate}</div>}
-              {status==='validated'&&<div style={{padding:"10px 14px",background:"rgba(255,255,255,0.6)",borderRadius:8,fontSize:13,color:"#1FA060",fontWeight:700}}>✅ Validado el {pay.validatedDate} · {pay.amount}€</div>}
-            </div>
-          </div>
-        )}
-        {view==="schedule"&&(
-          <div>
-            <h2 style={{margin:"0 0 4px",color:C.azulO}}>Horario de clases</h2>
-            <p style={{color:C.muted,fontSize:13,marginBottom:16}}>Máximo {MAX} alumnos por clase. 🟢 Con hueco · 🟡 Casi llena · 🔴 Completa</p>
-            {[1,2,3,4,5].map(dow=>{
-              const dg=groups.filter(g=>g.day===dow&&g.students.length>0).sort((a,b)=>a.time.localeCompare(b.time));
-              if(!dg.length)return null;
-              return(
-                <div key={dow} style={{marginBottom:14}}>
-                  <h3 style={{margin:"0 0 8px",color:C.azulO,fontSize:14,fontWeight:800}}>{DNF[dow]}</h3>
-                  {dg.map(g=>{
-                    const spots=MAX-g.students.length,full=spots===0,mine=g.id===user.groupId;
-                    const col=full?"#e53935":spots<=2?C.mostaza:"#1FA060";
-                    const tm=TM[g.teacher]||TM["?"];
-                    return(
-                      <div key={g.id} style={{background:mine?"#EEF5FF":C.card,borderRadius:10,padding:"12px 16px",marginBottom:8,display:"flex",justifyContent:"space-between",alignItems:"center",borderLeft:`4px solid ${mine?C.azulO:col}`,boxShadow:"0 1px 4px rgba(0,0,0,0.06)"}}>
-                        <div>
-                          <div style={{display:"flex",alignItems:"center",gap:7}}>
-                            <span style={{fontWeight:700,fontSize:14}}>{g.name}</span>
-                            {mine&&<span style={{fontSize:10,background:C.azulO,color:"#fff",padding:"1px 8px",borderRadius:10,fontWeight:700}}>MI CLASE</span>}
-                            {g.level&&<span style={{fontSize:11,color:C.muted}}>({g.level})</span>}
-                          </div>
-                          <div style={{fontSize:12,color:C.muted,marginTop:2}}>{g.time}–{g.end} · <span style={{color:tm.c,fontWeight:600}}>{g.teacher}</span></div>
-                        </div>
-                        <div style={{textAlign:"right",flexShrink:0}}>
-                          <div style={{padding:"4px 12px",borderRadius:20,background:full?"#FFEBEE":spots<=2?"#FFF8D5":"#E0F7EC",color:col,fontWeight:700,fontSize:12}}>
-                            {full?"Completa":`${spots} hueco${spots!==1?"s":""}`}
-                          </div>
-                          <div style={{fontSize:10,color:C.muted,marginTop:3}}>{g.students.length}/{MAX} plazas</div>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </main>
-    </div>
-  );
-}
+  function load(){
+    sb.from("workshops").select("*").order("start_date").then(({data})=>setWorkshops(data||[]));
+    sb.from("workshop_registrations").select("*").then(({data})=>setRegs(data||[]));
+  }
+  useEffect(load,[]);
 
-// ─── SHARED: CALENDAR ────────────────────────────────────────────────────────
-function CalendarView({groups,sessions,setSessions,role}){
-  const [cur,setCur]=useState(new Date(2026,3,1)),[selDay,setSelDay]=useState(null),[sessCtx,setSessCtx]=useState(null),[filterT,setFilterT]=useState("Todas");
-  const yr=cur.getFullYear(),mo=cur.getMonth();
-  const calDays=useMemo(()=>{const first=new Date(yr,mo,1).getDay(),off=first===0?6:first-1;return[...Array(off).fill(null),...Array.from({length:new Date(yr,mo+1,0).getDate()},(_,i)=>i+1)];},[yr,mo]);
-  const gForDay=d=>{const dow=new Date(yr,mo,d).getDay();return groups.filter(g=>g.day===dow&&g.students.length>0&&(filterT==="Todas"||g.teacher===filterT));};
-  const ds=d=>`${yr}-${String(mo+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
-  const sk=(gid,dt)=>`${gid}::${dt}`;
-  const gSess=(gid,dt)=>sessions[sk(gid,dt)];
-  const saveSess=(gid,dt,att)=>{setSessions(p=>({...p,[sk(gid,dt)]:{att}}));setSessCtx(null);};
-  const getMonthlyRec=name=>{const now=new Date(),ny=now.getFullYear(),nm=now.getMonth()+1;return Object.entries(sessions).filter(([k,s])=>{const dt=k.split("::")[1];if(!dt)return false;const[y,m]=dt.split("-").map(Number);return y===ny&&m===nm&&s.att?.[name]==="ar";}).length;};
-  const today=new Date(),isToday=d=>today.getFullYear()===yr&&today.getMonth()===mo&&today.getDate()===d;
-  const navB={background:"rgba(35,80,160,0.1)",border:"none",borderRadius:8,color:C.azulO,padding:"5px 13px",cursor:"pointer",fontSize:18};
-  const fBtn=(t,a)=>{const m=TM[t];return{padding:"4px 11px",borderRadius:20,border:`2px solid ${m?.c||C.azulO}`,cursor:"pointer",fontWeight:600,fontSize:11,background:a?(m?.c||C.azulO):"transparent",color:a?"#fff":(m?.c||C.azulO)};};
-  return(
+  async function save(w){
+    if(w.id) await sb.from("workshops").update(w).eq("id",w.id);
+    else await sb.from("workshops").insert(w);
+    setEditing(null); load();
+  }
+
+  return (
     <div>
-      <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14}}>
-        <button onClick={()=>setCur(new Date(yr,mo-1,1))} style={navB}>‹</button>
-        <h2 style={{margin:0,flex:1,textAlign:"center",fontSize:20,fontWeight:900,color:C.azulO}}>{MN[mo]} {yr}</h2>
-        <button onClick={()=>setCur(new Date(yr,mo+1,1))} style={navB}>›</button>
-        <button onClick={()=>setCur(new Date())} style={{...navB,fontSize:12,padding:"5px 10px"}}>Hoy</button>
-      </div>
-      <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:12}}>
-        <button onClick={()=>setFilterT("Todas")} style={{padding:"4px 11px",borderRadius:20,border:`2px solid ${C.azulO}`,cursor:"pointer",fontWeight:600,fontSize:11,background:filterT==="Todas"?C.azulO:"transparent",color:filterT==="Todas"?"#fff":C.azulO}}>Todas</button>
-        {TEACHERS.map(t=><button key={t} onClick={()=>setFilterT(t)} style={fBtn(t,filterT===t)}>{t}</button>)}
-      </div>
-      <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:3,marginBottom:14}}>
-        {DL.map(d=><div key={d} style={{textAlign:"center",padding:"4px 0",color:C.muted,fontWeight:700,fontSize:11}}>{d}</div>)}
-        {calDays.map((d,i)=>{
-          const dg=d?gForDay(d):[];const sel=selDay===d&&d!==null;
-          return(
-            <div key={i} onClick={()=>d&&setSelDay(sel?null:d)} style={{minHeight:72,background:sel?C.azulO:(d?C.card:"transparent"),borderRadius:8,padding:4,cursor:d?"pointer":"default",border:isToday(d)?`2px solid ${C.mostaza}`:`2px solid ${d?C.border:"transparent"}`,boxShadow:d?"0 1px 4px rgba(0,0,0,0.05)":"none"}}>
-              {d&&<>
-                <div style={{fontWeight:700,fontSize:12,marginBottom:2,color:sel?"#fff":isToday(d)?C.mostaza:C.text}}>{d}</div>
-                {dg.map(g=>{const m=TM[g.teacher]||TM["?"],sess=gSess(g.id,ds(d)),done=sess&&Object.keys(sess.att||{}).length>0;return(
-                  <div key={g.id} onClick={e=>{e.stopPropagation();setSessCtx({group:g,dateStr:ds(d)});}} style={{background:sel?"rgba(255,255,255,0.18)":m.bg,borderLeft:`3px solid ${m.c}`,borderRadius:3,padding:"1px 4px",marginBottom:1,fontSize:9,color:sel?"#fff":m.tx,cursor:"pointer",overflow:"hidden",whiteSpace:"nowrap",textOverflow:"ellipsis"}}>
-                    {done&&"✓ "}{g.time} {g.name}
-                  </div>);})}
-              </>}
+      <button className="btn-primary" style={{marginBottom:12}} onClick={()=>setEditing({name:"",type:"taller",start_date:todayISO,end_date:todayISO,teacher:TEACHERS[0],price_per_day:null,total_price:0,sibling_discount_pct:5,max_students:10,materials_cost:0})}>+ Nuevo taller/campamento</button>
+      {workshops.map(w=>{
+        const wRegs = regs.filter(r=>r.workshop_id===w.id);
+        return (
+          <div key={w.id} className="card" style={{marginBottom:10}}>
+            <div style={{display:"flex",justifyContent:"space-between"}}>
+              <div><b>{w.name}</b> · {w.type} · {w.start_date} → {w.end_date} · {w.teacher||"—"} · {w.total_price}€</div>
+              <button className="btn-ghost" onClick={()=>setEditing(w)}>Editar</button>
             </div>
-          );
-        })}
-      </div>
-      {selDay&&(
-        <div style={{background:C.card,borderRadius:12,padding:16,boxShadow:"0 1px 6px rgba(0,0,0,0.07)"}}>
-          <h3 style={{margin:"0 0 12px",color:C.azulO}}>{DNF[new Date(yr,mo,selDay).getDay()]} {selDay} de {MN[mo]}</h3>
-          {gForDay(selDay).length===0?<p style={{color:C.muted,margin:0}}>Sin clases este día.</p>
-            :gForDay(selDay).map(g=>{
-              const dt=ds(selDay),sess=gSess(g.id,dt),att=sess?.att||{},done=Object.keys(att).length>0,pr=Object.values(att).filter(x=>x==="pr").length;
-              const m=TM[g.teacher]||TM["?"];
-              return(
-                <div key={g.id} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"10px 12px",background:m.bg,borderRadius:10,marginBottom:8,borderLeft:`4px solid ${m.c}`}}>
-                  <div><div style={{fontWeight:700,fontSize:14}}>{g.name}{g.level&&<span style={{fontWeight:400,color:C.muted,fontSize:12}}> ({g.level})</span>}</div><div style={{fontSize:12,color:C.muted,marginTop:2}}>{g.time}–{g.end} · <span style={{color:m.c,fontWeight:700}}>{g.teacher}</span> · {g.students.length} alumnos{done&&<span style={{color:"#1FA060",fontWeight:700}}> · ✓ {pr}/{g.students.length}</span>}</div></div>
-                  <button onClick={()=>setSessCtx({group:g,dateStr:dt})} style={{padding:"7px 14px",background:done?"#1FA060":C.azulO,border:"none",borderRadius:8,color:"#fff",cursor:"pointer",fontWeight:700,fontSize:12,flexShrink:0}}>{done?"✓ Ver":"Pasar lista"}</button>
-                </div>
-              );
-            })}
+            <div style={{fontSize:13,color:"var(--gris)",marginTop:4}}>{wRegs.length} inscritos {w.max_students?`/ ${w.max_students}`:""} · Ingresos: {wRegs.reduce((s,r)=>s+(r.amount||0),0)}€</div>
+          </div>
+        );
+      })}
+      {editing && (
+        <div className="modal-bg" onClick={()=>setEditing(null)}>
+          <div className="modal" onClick={e=>e.stopPropagation()}>
+            <h3 style={{marginTop:0}}>{editing.id?"Editar":"Nuevo"} taller/campamento</h3>
+            <Field label="Nombre"><input value={editing.name} onChange={e=>setEditing({...editing,name:e.target.value})}/></Field>
+            <Field label="Tipo"><select value={editing.type} onChange={e=>setEditing({...editing,type:e.target.value})}><option value="taller">Taller</option><option value="campamento">Campamento</option></select></Field>
+            <div className="row">
+              <div className="col"><Field label="Fecha inicio"><input type="date" value={editing.start_date} onChange={e=>setEditing({...editing,start_date:e.target.value})}/></Field></div>
+              <div className="col"><Field label="Fecha fin"><input type="date" value={editing.end_date} onChange={e=>setEditing({...editing,end_date:e.target.value})}/></Field></div>
+            </div>
+            <Field label="Profesora"><select value={editing.teacher||""} onChange={e=>setEditing({...editing,teacher:e.target.value})}><option value="">—</option>{TEACHERS.map(t=><option key={t}>{t}</option>)}</select></Field>
+            <div className="row">
+              <div className="col"><Field label="Precio total (€)"><input type="number" value={editing.total_price} onChange={e=>setEditing({...editing,total_price:parseFloat(e.target.value)})}/></Field></div>
+              <div className="col"><Field label="Descuento hermanos (%)"><input type="number" value={editing.sibling_discount_pct} onChange={e=>setEditing({...editing,sibling_discount_pct:parseFloat(e.target.value)})}/></Field></div>
+            </div>
+            <div className="row">
+              <div className="col"><Field label="Plazas máx."><input type="number" value={editing.max_students||""} onChange={e=>setEditing({...editing,max_students:parseInt(e.target.value)||null})}/></Field></div>
+              <div className="col"><Field label="Coste materiales (€)"><input type="number" value={editing.materials_cost} onChange={e=>setEditing({...editing,materials_cost:parseFloat(e.target.value)})}/></Field></div>
+            </div>
+            <div className="row"><button className="btn-ghost" onClick={()=>setEditing(null)}>Cancelar</button><button className="btn-primary" onClick={()=>save(editing)}>Guardar</button></div>
+          </div>
         </div>
       )}
-      {sessCtx&&<SessionModal group={sessCtx.group} dateStr={sessCtx.dateStr} existing={gSess(sessCtx.group.id,sessCtx.dateStr)} monthlyRec={Object.fromEntries(sessCtx.group.students.map(s=>[s,getMonthlyRec(s)]))} onSave={saveSess} onClose={()=>setSessCtx(null)}/>}
     </div>
   );
 }
 
-// ─── SHARED: GROUPS ───────────────────────────────────────────────────────────
-function GroupsView({groups,setGroups,role}){
-  const [filterT,setFilterT]=useState("Todas"),[editGrp,setEditGrp]=useState(null);
-  const fBtn=(t,a)=>{const m=TM[t];return{padding:"4px 11px",borderRadius:20,border:`2px solid ${m?.c||C.azulO}`,cursor:"pointer",fontWeight:600,fontSize:11,background:a?(m?.c||C.azulO):"transparent",color:a?"#fff":(m?.c||C.azulO)};};
-  const saveGroup=g=>{if(g.id)setGroups(p=>p.map(x=>x.id===g.id?g:x));else setGroups(p=>[...p,{...g,id:Date.now()}]);setEditGrp(null);};
-  const delGroup=id=>{const g=groups.find(x=>x.id===id);if(window.confirm(`¿Eliminar "${g.name}"?`))setGroups(p=>p.filter(x=>x.id!==id));};
-  const filtered=filterT==="Todas"?groups:groups.filter(g=>g.teacher===filterT);
-  return(
+/* ============================================================
+   VISTA CEO — BONOS REGALO
+   ============================================================ */
+function VouchersView(){
+  const [vouchers,setVouchers] = useState([]);
+  const [editing,setEditing] = useState(null);
+  function load(){ sb.from("gift_vouchers").select("*").order("created_at",{ascending:false}).then(({data})=>setVouchers(data||[])); }
+  useEffect(load,[]);
+  async function save(v){
+    if(v.id) await sb.from("gift_vouchers").update(v).eq("id",v.id);
+    else await sb.from("gift_vouchers").insert(v);
+    setEditing(null); load();
+  }
+  return (
     <div>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
-        <h2 style={{margin:0,color:C.azulO}}>Clases <span style={{color:C.muted,fontWeight:400,fontSize:14}}>({groups.length})</span></h2>
-        {role==='ceo'&&<button onClick={()=>setEditGrp({name:"",day:1,time:"10:00",end:"11:30",teacher:"Sonia",level:"",fee:50,students:[]})} style={{padding:"8px 18px",background:C.mostaza,border:"none",borderRadius:20,color:"#fff",cursor:"pointer",fontWeight:800,fontSize:13}}>+ Nueva clase</button>}
-      </div>
-      <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:14}}>
-        <button onClick={()=>setFilterT("Todas")} style={{padding:"4px 11px",borderRadius:20,border:`2px solid ${C.azulO}`,cursor:"pointer",fontWeight:600,fontSize:11,background:filterT==="Todas"?C.azulO:"transparent",color:filterT==="Todas"?"#fff":C.azulO}}>Todas</button>
-        {TEACHERS.map(t=><button key={t} onClick={()=>setFilterT(t)} style={fBtn(t,filterT===t)}>{t}</button>)}
-      </div>
-      {[1,2,3,4,5].map(dow=>{
-        const dg=filtered.filter(g=>g.day===dow).sort((a,b)=>a.time.localeCompare(b.time));if(!dg.length)return null;
-        return(
-          <div key={dow} style={{marginBottom:20}}>
-            <h3 style={{margin:"0 0 10px",fontSize:15,color:C.azulO,fontWeight:800,paddingBottom:6,borderBottom:`2px solid ${C.border}`}}>{DNF[dow]}</h3>
-            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(260px,1fr))",gap:10}}>
-              {dg.map(g=>{const m=TM[g.teacher]||TM["?"],emp=g.students.length===0;return(
-                <div key={g.id} style={{background:C.card,borderRadius:10,padding:14,borderTop:`4px solid ${emp?"#ccc":m.c}`,boxShadow:"0 1px 4px rgba(0,0,0,0.06)",opacity:emp?.8:1}}>
-                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8}}>
-                    <div>
-                      <div style={{display:"flex",alignItems:"center",gap:6}}><span style={{fontWeight:700,fontSize:14}}>{g.name}</span>{emp&&<span style={{fontSize:9,background:"#f0f0f0",color:"#888",padding:"1px 6px",borderRadius:8,fontWeight:700}}>VACÍO</span>}</div>
-                      {g.level&&<span style={{display:"inline-block",fontSize:11,background:m.bg,color:m.c,padding:"1px 8px",borderRadius:10,fontWeight:600,marginTop:2}}>{g.level}</span>}
-                      <div style={{fontSize:12,color:C.muted,marginTop:4}}>{g.time}–{g.end} · <span style={{color:m.c,fontWeight:700}}>{g.teacher}</span></div>
-                      <div style={{fontSize:11,color:C.muted,marginTop:1}}>{g.students.length}/{MAX} alumnos · {g.fee}€/mes</div>
-                    </div>
-                    {role==='ceo'&&<div style={{display:"flex",gap:4,flexShrink:0}}>
-                      <button onClick={()=>setEditGrp({...g,students:[...g.students]})} style={{background:C.bg,border:`1px solid ${C.border}`,borderRadius:6,cursor:"pointer",padding:"5px 8px",fontSize:12}}>✏️</button>
-                      <button onClick={()=>delGroup(g.id)} style={{background:"#FFEBEE",border:"1px solid #ef9a9a",borderRadius:6,cursor:"pointer",padding:"5px 8px",fontSize:12}}>🗑️</button>
-                    </div>}
-                  </div>
-                  {g.students.length>0&&<div style={{borderTop:`1px solid ${C.border}`,paddingTop:8,maxHeight:80,overflowY:"auto"}}>
-                    {g.students.map(s=><div key={s} style={{fontSize:12,padding:"1px 0",display:"flex",alignItems:"center",gap:5}}><span style={{width:5,height:5,borderRadius:"50%",background:m.c,display:"inline-block",flexShrink:0}}/>{s}</div>)}
-                  </div>}
-                </div>
-              );})}
-            </div>
+      <button className="btn-primary" style={{marginBottom:12}} onClick={()=>setEditing({code:"CANVAS-"+Math.floor(1000+Math.random()*9000),buyer_name:"",buyer_contact:"",amount:30,paid:false,redeemed:false})}>+ Nuevo bono</button>
+      <table><thead><tr><th>Código</th><th>Comprador</th><th>Importe</th><th>Pagado</th><th>Canjeado</th><th></th></tr></thead>
+      <tbody>{vouchers.map(v=><tr key={v.id}>
+        <td>{v.code}</td><td>{v.buyer_name}</td><td>{v.amount}€</td>
+        <td>{v.paid?<span className="badge badge-ok">Sí</span>:<span className="badge badge-bad">No</span>}</td>
+        <td>{v.redeemed?<span className="badge badge-ok">Sí</span>:<span className="badge badge-warn">No</span>}</td>
+        <td><button className="btn-ghost" onClick={()=>setEditing(v)}>Editar</button></td>
+      </tr>)}</tbody></table>
+      {editing && (
+        <div className="modal-bg" onClick={()=>setEditing(null)}>
+          <div className="modal" onClick={e=>e.stopPropagation()}>
+            <h3 style={{marginTop:0}}>Bono regalo</h3>
+            <Field label="Código"><input value={editing.code} onChange={e=>setEditing({...editing,code:e.target.value})}/></Field>
+            <Field label="Comprador"><input value={editing.buyer_name} onChange={e=>setEditing({...editing,buyer_name:e.target.value})}/></Field>
+            <Field label="Contacto"><input value={editing.buyer_contact||""} onChange={e=>setEditing({...editing,buyer_contact:e.target.value})}/></Field>
+            <Field label="Importe (€)"><input type="number" value={editing.amount} onChange={e=>setEditing({...editing,amount:parseFloat(e.target.value)})}/></Field>
+            <label style={{display:"block",marginBottom:8}}><input type="checkbox" style={{width:"auto"}} checked={editing.paid} onChange={e=>setEditing({...editing,paid:e.target.checked})}/> Pagado</label>
+            <label style={{display:"block",marginBottom:8}}><input type="checkbox" style={{width:"auto"}} checked={editing.redeemed} onChange={e=>setEditing({...editing,redeemed:e.target.checked})}/> Canjeado</label>
+            <div className="row"><button className="btn-ghost" onClick={()=>setEditing(null)}>Cancelar</button><button className="btn-primary" onClick={()=>save(editing)}>Guardar</button></div>
           </div>
-        );
-      })}
-      {editGrp&&<GroupModal group={editGrp} onSave={saveGroup} onClose={()=>setEditGrp(null)}/>}
+        </div>
+      )}
     </div>
   );
 }
 
-// ─── SHARED: STATS ────────────────────────────────────────────────────────────
-function StatsView({groups,sessions}){
-  const allSt=[...new Set(groups.flatMap(g=>g.students))].sort();
-  const getStats=name=>{let pr=0,ar=0,ab=0;Object.values(sessions).forEach(s=>{const v=s.att?.[name];if(v==="pr")pr++;else if(v==="ar")ar++;else if(v==="ab")ab++;});return{pr,ar,ab,total:pr+ar+ab};};
-  const getMonthlyRec=name=>{const now=new Date(),ny=now.getFullYear(),nm=now.getMonth()+1;return Object.entries(sessions).filter(([k,s])=>{const dt=k.split("::")[1];if(!dt)return false;const[y,m]=dt.split("-").map(Number);return y===ny&&m===nm&&s.att?.[name]==="ar";}).length;};
-  return(
+/* ============================================================
+   VISTA CEO — GASTOS
+   ============================================================ */
+function ExpensesView({expenses,reload}){
+  const [concept,setConcept] = useState(""); const [amount,setAmount] = useState("");
+  async function add(){
+    if(!concept||!amount) return;
+    await sb.from("expenses").insert({concept,amount:parseFloat(amount),month:CM,year:CY});
+    setConcept(""); setAmount(""); reload();
+  }
+  const monthExpenses = expenses.filter(e=>e.year===CY&&e.month===CM);
+  return (
     <div>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
-        <h2 style={{margin:0,color:C.azulO}}>Estadísticas de asistencia</h2>
-        <div style={{fontSize:12,color:C.muted,background:C.card,padding:"6px 12px",borderRadius:20,border:`1px solid ${C.border}`}}>↩ Máx. 1 recuperación/mes</div>
+      <div className="row" style={{marginBottom:12}}>
+        <div className="col"><input placeholder="Concepto" value={concept} onChange={e=>setConcept(e.target.value)}/></div>
+        <div className="col"><input placeholder="Importe €" type="number" value={amount} onChange={e=>setAmount(e.target.value)}/></div>
+        <button className="btn-primary" onClick={add}>Añadir</button>
       </div>
-      {allSt.length===0?<div style={{background:C.card,borderRadius:12,padding:40,textAlign:"center",color:C.muted}}>Aún no hay datos de asistencia.</div>
-        :<div style={{background:C.card,borderRadius:12,overflow:"auto",boxShadow:"0 1px 6px rgba(0,0,0,0.07)"}}>
-          <table style={{width:"100%",borderCollapse:"collapse",minWidth:600}}>
-            <thead><tr style={{background:C.azulO,color:"#fff"}}>
-              {["Alumno","Clase · Día","Profesora","✓ Pres.","↩ Recup.","✗ No rec.","↩ Este mes","% Asist."].map((h,i)=><th key={i} style={{padding:"10px 12px",textAlign:i>2?"center":"left",fontWeight:700,fontSize:11,whiteSpace:"nowrap"}}>{h}</th>)}
-            </tr></thead>
-            <tbody>
-              {allSt.map((s,si)=>{
-                const st=getStats(s),grp=groups.find(g=>g.students.includes(s)),m=TM[grp?.teacher||"?"];
-                const pct=st.total>0?Math.round((st.pr/st.total)*100):null,rec=getMonthlyRec(s),recL=rec>=1;
-                return(
-                  <tr key={s} style={{background:si%2===0?C.bg:C.card,borderBottom:`1px solid ${C.border}`}}>
-                    <td style={{padding:"10px 12px",fontWeight:600,fontSize:13}}>{s}</td>
-                    <td style={{padding:"10px 12px",color:C.muted,fontSize:12}}>{grp?`${grp.name} · ${DNF[grp.day]}`:"—"}</td>
-                    <td style={{padding:"10px 12px"}}>{grp&&<span style={{padding:"2px 10px",borderRadius:10,background:m.bg,color:m.c,fontSize:12,fontWeight:700}}>{grp.teacher}</span>}</td>
-                    <td style={{padding:"10px 12px",textAlign:"center",color:"#1FA060",fontWeight:800,fontSize:16}}>{st.pr}</td>
-                    <td style={{padding:"10px 12px",textAlign:"center",color:C.mostaza,fontWeight:800,fontSize:16}}>{st.ar}</td>
-                    <td style={{padding:"10px 12px",textAlign:"center",color:"#e53935",fontWeight:800,fontSize:16}}>{st.ab}</td>
-                    <td style={{padding:"10px 12px",textAlign:"center"}}><span style={{display:"inline-flex",alignItems:"center",gap:3,padding:"3px 10px",borderRadius:20,background:recL?"#FFEBEE":"#E0F7EC",color:recL?"#e53935":"#1FA060",fontWeight:700,fontSize:12}}>{recL&&"⚠️ "}{rec}/1</span></td>
-                    <td style={{padding:"10px 12px",textAlign:"center"}}>{pct!==null?<span style={{padding:"3px 10px",borderRadius:20,background:pct>=80?"#E0F7EC":pct>=60?"#FFF8D5":"#FFEBEE",color:pct>=80?"#1FA060":pct>=60?C.mostaza:"#e53935",fontWeight:700,fontSize:12}}>{pct}%</span>:<span style={{color:C.muted}}>—</span>}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>}
+      <table><thead><tr><th>Concepto</th><th>Importe</th></tr></thead>
+      <tbody>{monthExpenses.map(e=><tr key={e.id}><td>{e.concept}</td><td>{e.amount}€</td></tr>)}</tbody></table>
     </div>
   );
 }
 
-// ─── GROUP MODAL ──────────────────────────────────────────────────────────────
-function GroupModal({group,onSave,onClose}){
-  const [f,setF]=useState({...group,students:[...(group.students||[])]}),[newSt,setNewSt]=useState("");
-  const m=TM[f.teacher]||TM["?"];
-  const addSt=()=>{if(newSt.trim()&&!f.students.includes(newSt.trim())&&f.students.length<MAX){setF(p=>({...p,students:[...p.students,newSt.trim()]}));setNewSt("");}};
-  const ov={position:"fixed",inset:0,background:"rgba(0,0,0,0.45)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000};
-  const md={background:C.card,borderRadius:16,padding:24,width:430,maxWidth:"95vw",maxHeight:"90vh",overflowY:"auto",boxShadow:"0 8px 40px rgba(0,0,0,0.25)"};
-  const lbl={display:"block",color:C.muted,fontSize:11,fontWeight:700,marginBottom:4,letterSpacing:.8,textTransform:"uppercase"};
-  const inp={width:"100%",padding:"8px 12px",background:C.bg,border:`1px solid ${C.border}`,borderRadius:8,color:C.text,fontSize:14,marginBottom:12,boxSizing:"border-box",outline:"none"};
-  return(<div style={ov}><div style={md}>
-    <div style={{display:"flex",justifyContent:"space-between",marginBottom:16}}><h3 style={{margin:0,color:C.azulO}}>{f.id?"Editar clase":"Nueva clase"}</h3><button onClick={onClose} style={{background:"none",border:"none",fontSize:20,cursor:"pointer",color:C.muted}}>✕</button></div>
-    <label style={lbl}>Nombre</label><input value={f.name} onChange={e=>setF(p=>({...p,name:e.target.value}))} style={inp}/>
-    <label style={lbl}>Nivel / Edad</label><input value={f.level} onChange={e=>setF(p=>({...p,level:e.target.value}))} style={inp}/>
-    <label style={lbl}>Cuota mensual (€)</label><input type="number" value={f.fee} onChange={e=>setF(p=>({...p,fee:parseInt(e.target.value)}))} style={inp}/>
-    <label style={lbl}>Día</label>
-    <div style={{display:"flex",gap:6,marginBottom:12,flexWrap:"wrap"}}>
-      {[[1,"Lun"],[2,"Mar"],[3,"Mié"],[4,"Jue"],[5,"Vie"]].map(([d,l])=><button key={d} onClick={()=>setF(p=>({...p,day:d}))} style={{padding:"6px 12px",borderRadius:20,border:`2px solid ${C.azulO}`,cursor:"pointer",fontWeight:700,fontSize:12,background:f.day===d?C.azulO:"transparent",color:f.day===d?"#fff":C.azulO}}>{l}</button>)}
-    </div>
-    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
-      <div><label style={lbl}>Inicio</label><input type="time" value={f.time} onChange={e=>setF(p=>({...p,time:e.target.value}))} style={inp}/></div>
-      <div><label style={lbl}>Fin</label><input type="time" value={f.end} onChange={e=>setF(p=>({...p,end:e.target.value}))} style={inp}/></div>
-    </div>
-    <label style={lbl}>Profesora</label>
-    <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:12}}>
-      {TEACHERS.map(t=>{const tm=TM[t],a=f.teacher===t;return<button key={t} onClick={()=>setF(p=>({...p,teacher:t}))} style={{padding:"5px 12px",borderRadius:20,border:`2px solid ${tm.c}`,cursor:"pointer",fontWeight:700,fontSize:12,background:a?tm.c:"transparent",color:a?"#fff":tm.c}}>{t}</button>;})}
-    </div>
-    <label style={lbl}>Alumnos ({f.students.length}/{MAX})</label>
-    <div style={{display:"flex",gap:7,marginBottom:8}}>
-      <input value={newSt} onChange={e=>setNewSt(e.target.value)} onKeyDown={e=>e.key==="Enter"&&addSt()} style={{...inp,marginBottom:0,flex:1}} placeholder="Nombre del alumno"/>
-      <button onClick={addSt} style={{padding:"8px 14px",background:C.mostaza,border:"none",borderRadius:8,color:"#fff",cursor:"pointer",fontWeight:800,fontSize:18}}>+</button>
-    </div>
-    <div style={{maxHeight:120,overflowY:"auto",marginBottom:16}}>
-      {f.students.map(s=><div key={s} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"5px 10px",background:C.bg,borderRadius:7,marginBottom:3,fontSize:13}}>
-        <span style={{display:"flex",alignItems:"center",gap:6}}><span style={{width:6,height:6,borderRadius:"50%",background:m.c,display:"inline-block"}}/>{s}</span>
-        <button onClick={()=>setF(p=>({...p,students:p.students.filter(x=>x!==s)}))} style={{background:"none",border:"none",color:"#e53935",cursor:"pointer",fontSize:15}}>✕</button>
-      </div>)}
-    </div>
-    <div style={{display:"flex",gap:8}}>
-      <button onClick={onClose} style={{flex:1,padding:10,background:C.bg,border:`1px solid ${C.border}`,borderRadius:9,cursor:"pointer",fontWeight:600}}>Cancelar</button>
-      <button onClick={()=>onSave(f)} style={{flex:1,padding:10,background:C.azulO,border:"none",borderRadius:9,color:"#fff",cursor:"pointer",fontWeight:700}}>Guardar</button>
-    </div>
-  </div></div>);
-}
+/* ============================================================
+   VISTA CEO — RAÍZ
+   ============================================================ */
+function CEOApp({profile,onLogout}){
+  const [tab,setTab] = useState("dashboard");
+  const [groups,setGroups] = useState([]);
+  const [profiles,setProfiles] = useState([]);
+  const [payments,setPayments] = useState([]);
+  const [expenses,setExpenses] = useState([]);
+  const [attendance,setAttendance] = useState([]);
+  const [rates,setRates] = useState([]);
+  const [tiers,setTiers] = useState([]);
 
-// ─── SESSION MODAL ────────────────────────────────────────────────────────────
-function SessionModal({group,dateStr,existing,monthlyRec,onSave,onClose}){
-  const [att,setAtt]=useState(existing?.att||{});
-  const m=TM[group.teacher]||TM["?"];
-  const [yy,mm,dd]=dateStr.split("-");
-  const opts=[{k:"pr",icon:"✓",label:"Presente",color:"#1FA060",bg:"#E0F7EC"},{k:"ar",icon:"↩",label:"Recuperable",color:C.mostaza,bg:"#FFF8D5"},{k:"ab",icon:"✗",label:"No recup.",color:"#e53935",bg:"#FFEBEE"}];
-  const stats={pr:0,ar:0,ab:0};Object.values(att).forEach(v=>{if(v in stats)stats[v]++;});
-  const ov={position:"fixed",inset:0,background:"rgba(0,0,0,0.45)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000};
-  const md={background:C.card,borderRadius:16,padding:24,width:460,maxWidth:"95vw",maxHeight:"90vh",overflowY:"auto",boxShadow:"0 8px 40px rgba(0,0,0,0.25)"};
-  return(<div style={ov}><div style={md}>
-    <div style={{display:"flex",justifyContent:"space-between",marginBottom:8}}><h3 style={{margin:0,color:C.azulO,fontSize:16}}>Pasar lista</h3><button onClick={onClose} style={{background:"none",border:"none",fontSize:20,cursor:"pointer",color:C.muted}}>✕</button></div>
-    <div style={{padding:"10px 12px",background:m.bg,borderRadius:10,marginBottom:12,borderLeft:`4px solid ${m.c}`}}>
-      <div style={{fontWeight:700,fontSize:14}}>{group.name}{group.level&&<span style={{fontWeight:400,fontSize:12,color:C.muted}}> ({group.level})</span>}</div>
-      <div style={{fontSize:12,color:C.muted,marginTop:2}}>{dd}/{mm}/{yy} · {group.time}–{group.end} · <span style={{color:m.c,fontWeight:700}}>{group.teacher}</span></div>
+  function load(){
+    sb.from("groups").select("*").order("day").then(({data})=>setGroups(data||[]));
+    sb.from("profiles").select("*").then(({data})=>setProfiles(data||[]));
+    sb.from("payments").select("*").then(({data})=>setPayments(data||[]));
+    sb.from("expenses").select("*").then(({data})=>setExpenses(data||[]));
+    sb.from("attendance").select("*").then(({data})=>setAttendance(data||[]));
+    sb.from("teacher_rates").select("*").then(({data})=>setRates(data||[]));
+    sb.from("incentive_tiers").select("*").then(({data})=>setTiers(data||[]));
+  }
+  useEffect(load,[]);
+
+  const tabs = [
+    ["dashboard","Dashboard"],["groups","Clases"],["payments","Pagos"],["stats","Estadísticas"],
+    ["teacherpay","Pago profesoras"],["workshops","Talleres"],["vouchers","Bonos"],["expenses","Gastos"]
+  ];
+
+  return (
+    <div>
+      <div className="topbar"><Logo size={30} dark={true}/><button className="btn-ghost" onClick={onLogout}>Salir</button></div>
+      <div className="container">
+        <div className="tabs" style={{marginBottom:16}}>
+          {tabs.map(([k,l])=><div key={k} className={"tab "+(tab===k?"active":"")} onClick={()=>setTab(k)}>{l}</div>)}
+        </div>
+        {tab==="dashboard" && <CEODashboard groups={groups} profiles={profiles} payments={payments} expenses={expenses}/>}
+        {tab==="groups" && <GroupsView groups={groups} profiles={profiles} reload={load}/>}
+        {tab==="payments" && <PaymentsView profiles={profiles} payments={payments} reload={load}/>}
+        {tab==="stats" && <StatsView groups={groups} profiles={profiles} attendance={attendance}/>}
+        {tab==="teacherpay" && <TeacherPayView groups={groups} attendance={attendance} rates={rates} tiers={tiers}/>}
+        {tab==="workshops" && <WorkshopsView/>}
+        {tab==="vouchers" && <VouchersView/>}
+        {tab==="expenses" && <ExpensesView expenses={expenses} reload={load}/>}
+      </div>
     </div>
-    <div style={{display:"flex",gap:8,marginBottom:10}}>
-      {opts.map(o=><div key={o.k} style={{flex:1,textAlign:"center",padding:"7px 4px",background:o.bg,borderRadius:10}}><div style={{fontSize:18,fontWeight:900,color:o.color}}>{stats[o.k]}</div><div style={{fontSize:10,color:C.muted,fontWeight:600}}>{o.label}</div></div>)}
-    </div>
-    <div style={{display:"flex",gap:6,marginBottom:10}}>
-      <button onClick={()=>group.students.forEach(s=>setAtt(p=>({...p,[s]:"pr"})))} style={{flex:1,padding:"6px",background:"#E0F7EC",border:"1px solid #1FA060",borderRadius:7,color:"#1FA060",cursor:"pointer",fontWeight:700,fontSize:12}}>✓ Todos presentes</button>
-      <button onClick={()=>setAtt({})} style={{flex:1,padding:"6px",background:C.bg,border:`1px solid ${C.border}`,borderRadius:7,color:C.muted,cursor:"pointer",fontWeight:700,fontSize:12}}>↺ Limpiar</button>
-    </div>
-    {group.students.length===0?<div style={{textAlign:"center",color:C.muted,padding:16,fontSize:13}}>Sin alumnos.</div>
-      :group.students.map(s=>{
-        const status=att[s],recUsed=monthlyRec?.[s]>=1,markAr=status==="ar";
-        return(
-          <div key={s} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 10px",background:recUsed&&markAr?"#FFF3CD":C.bg,borderRadius:8,marginBottom:5,border:recUsed&&markAr?"1px solid #f59e0b":"1px solid transparent"}}>
-            <div style={{display:"flex",alignItems:"center",gap:6}}>
-              <span style={{fontSize:13,fontWeight:500}}>{s}</span>
-              {recUsed&&<span style={{fontSize:10,background:"#FFF3CD",color:"#92400e",padding:"1px 6px",borderRadius:8,fontWeight:700}}>⚠️ límite</span>}
-            </div>
-            <div style={{display:"flex",gap:4}}>
-              {opts.map(o=>{const bl=o.k==="ar"&&recUsed&&status!=="ar";return(
-                <button key={o.k} onClick={()=>!bl&&setAtt(p=>({...p,[s]:o.k}))} style={{width:34,height:34,borderRadius:7,border:`2px solid ${status===o.k?o.color:bl?"#ddd":C.border}`,background:status===o.k?o.bg:bl?"#f5f5f5":"transparent",color:bl?"#ccc":o.color,cursor:bl?"not-allowed":"pointer",fontWeight:900,fontSize:14,display:"flex",alignItems:"center",justifyContent:"center"}}>
-                  {o.icon}
-                </button>
-              );})}
-            </div>
-          </div>
-        );
-      })}
-    <div style={{display:"flex",gap:8,marginTop:14}}>
-      <button onClick={onClose} style={{flex:1,padding:10,background:C.bg,border:`1px solid ${C.border}`,borderRadius:9,cursor:"pointer",fontWeight:600}}>Cancelar</button>
-      <button onClick={()=>onSave(group.id,dateStr,att)} style={{flex:1,padding:10,background:C.azulO,border:"none",borderRadius:9,color:"#fff",cursor:"pointer",fontWeight:700}}>Guardar</button>
-    </div>
-  </div></div>);
+  );
 }
 
 ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
