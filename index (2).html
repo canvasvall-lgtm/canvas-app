@@ -80,6 +80,30 @@ const DNF = ["Lunes","Martes","Miércoles","Jueves","Viernes"];
 const MN = ["","Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
 const STANDARD_ENROLLMENT_FEE = 10; // matrícula estándar
 
+// Calendario escolar 2026-2027 (Orden EDU/478/2026, BOCYL 28/05/2026) + festivos locales de Valladolid
+const COURSE_START = "2026-09-09";
+const COURSE_END = "2027-06-30";
+const SCHOOL_CLOSURES = [
+  {start:"2026-09-08", end:"2026-09-08", label:"Ntra. Sra. de San Lorenzo (festivo local de Valladolid)"},
+  {start:"2026-10-12", end:"2026-10-12", label:"Fiesta Nacional de España"},
+  {start:"2026-10-30", end:"2026-10-30", label:"Día del Docente (no lectivo)"},
+  {start:"2026-11-02", end:"2026-11-02", label:"Todos los Santos (traslado)"},
+  {start:"2026-12-07", end:"2026-12-08", label:"Puente de la Constitución / Inmaculada"},
+  {start:"2026-12-23", end:"2027-01-10", label:"Vacaciones de Navidad"},
+  {start:"2027-02-08", end:"2027-02-09", label:"Carnaval (no lectivo)"},
+  {start:"2027-03-20", end:"2027-03-30", label:"Vacaciones de Semana Santa"},
+  {start:"2027-04-23", end:"2027-04-23", label:"Día de Castilla y León"},
+  {start:"2027-05-13", end:"2027-05-13", label:"San Pedro Regalado (festivo local de Valladolid)"}
+];
+function isSchoolDay(dateStr){
+  if(dateStr < COURSE_START || dateStr > COURSE_END) return false;
+  return !SCHOOL_CLOSURES.some(c => dateStr>=c.start && dateStr<=c.end);
+}
+function nextClosure(fromDate){
+  const upcoming = SCHOOL_CLOSURES.filter(c=>c.end>=fromDate).sort((a,b)=>a.start.localeCompare(b.start));
+  return upcoming[0] || null;
+}
+
 const CONDITIONS_TEXT = [
   ["Matrícula", "Se paga una única vez al darte de alta y no es reembolsable."],
   ["Cuota mensual", "Se paga por adelantado dentro de los primeros días de cada mes. No es reembolsable."],
@@ -112,21 +136,19 @@ function ageFromBirthdate(dateStr){
   if(notYet) age--;
   return age;
 }
-function genTempPassword(){
-  const words=["Pincel","Lienzo","Color","Paleta","Trazo","Acuarela"];
-  const w = words[Math.floor(Math.random()*words.length)];
-  const n = Math.floor(1000+Math.random()*9000);
-  return `${w}${n}!`;
-}
+
 function effectiveRoster(g, profilesArr){
   const extra = (profilesArr||[]).filter(p=>p.role==="student" && p.group_id===g.id).map(p=>p.display_name);
   return [...(g.students||[]), ...extra];
 }
 function nextOccurrences(dayOfWeek, count=3){
-  const dates=[]; let d = new Date(NOW); d.setHours(0,0,0,0);
-  for(let i=0;i<60 && dates.length<count;i++){
+  const dates=[];
+  const startFrom = todayISO < COURSE_START ? COURSE_START+"T00:00:00" : NOW.toISOString();
+  let d = new Date(startFrom); d.setHours(0,0,0,0);
+  for(let i=0;i<200 && dates.length<count;i++){
     const dow = ((d.getDay()+6)%7)+1;
-    if(dow===dayOfWeek) dates.push(d.toISOString().split("T")[0]);
+    const ds = d.toISOString().split("T")[0];
+    if(dow===dayOfWeek && isSchoolDay(ds)) dates.push(ds);
     d.setDate(d.getDate()+1);
   }
   return dates;
@@ -274,10 +296,9 @@ function RegisterForm({onBack}){
   const [groups,setGroups] = useState(null);
   const [loadErr,setLoadErr] = useState("");
   const [step,setStep] = useState("form"); // form | done
-  const [tempPw,setTempPw] = useState("");
   const [err,setErr]=useState(""); const [loading,setLoading]=useState(false);
   const [f,setF] = useState({
-    display_name:"", email:"", group_id:"", birthdate:"", guardian_name:"", guardian_phone:"",
+    display_name:"", email:"", password:"", password2:"", group_id:"", birthdate:"", guardian_name:"", guardian_phone:"",
     guardian_email:"", payment_type:"monthly", preferred_payment_method:"transferencia", privacy_consent:false,
     conditions_accepted:false, conditions_signature:""
   });
@@ -290,18 +311,23 @@ function RegisterForm({onBack}){
   },[]);
 
   function upd(k,v){ setF(prev=>({...prev,[k]:v})); }
+  const age = f.birthdate ? ageFromBirthdate(f.birthdate) : null;
+  const isMinor = age===null || age < 18;
 
   async function submit(e){
     e.preventDefault(); setErr("");
     if(!f.privacy_consent){ setErr("Tienes que aceptar las condiciones de privacidad para continuar."); return; }
     if(!f.conditions_accepted || !f.conditions_signature.trim()){ setErr("Tienes que leer y firmar las condiciones de la academia para continuar."); return; }
+    if(isMinor && !f.guardian_name.trim()){ setErr("Indica el nombre del adulto responsable."); return; }
+    if(!f.guardian_phone.trim()){ setErr("Indica un teléfono de contacto."); return; }
     if(!f.group_id){ setErr("Elige una clase."); return; }
+    if(f.password.length<6){ setErr("La contraseña debe tener al menos 6 caracteres."); return; }
+    if(f.password!==f.password2){ setErr("Las dos contraseñas no coinciden."); return; }
     const group = groups.find(g=>String(g.id)===String(f.group_id));
     if(group && group.current_count >= MAX){ setErr("Vaya, esa clase se acaba de completar. Elige otra, por favor."); return; }
 
     setLoading(true);
-    const pw = genTempPassword();
-    const { data: signUpData, error: signUpErr } = await sb.auth.signUp({ email: f.email.trim(), password: pw });
+    const { data: signUpData, error: signUpErr } = await sb.auth.signUp({ email: f.email.trim(), password: f.password });
     if(signUpErr){
       setLoading(false);
       setErr(signUpErr.message.includes("already registered") ? "Ese email ya está registrado. Prueba a iniciar sesión." : signUpErr.message);
@@ -316,7 +342,7 @@ function RegisterForm({onBack}){
     const { error: profileErr } = await sb.from("profiles").insert({
       id: uid, role:"student", display_name:f.display_name, group_id:group.id, fee,
       payment_type:f.payment_type, birthdate: f.birthdate||null,
-      guardian_name:f.guardian_name, guardian_phone:f.guardian_phone, guardian_email:f.guardian_email,
+      guardian_name: isMinor ? f.guardian_name : null, guardian_phone:f.guardian_phone, guardian_email:f.guardian_email,
       preferred_payment_method:f.preferred_payment_method, student_status:"nuevo",
       enrollment_month: MN[CM]+" "+CY, enrollment_fee: enrollmentFee, enrollment_fee_paid:false,
       privacy_consent:true, privacy_consent_at: new Date().toISOString(),
@@ -324,7 +350,7 @@ function RegisterForm({onBack}){
     });
     setLoading(false);
     if(profileErr){ setErr("Tu cuenta se creó pero hubo un problema guardando tus datos: "+profileErr.message+". Escríbenos y lo arreglamos."); return; }
-    setTempPw(pw); setStep("done");
+    setStep("done");
   }
 
   if(groups===null) return <div className="card"><div className="loader"></div></div>;
@@ -336,9 +362,7 @@ function RegisterForm({onBack}){
       <div className="card" style={{textAlign:"center"}}>
         <div style={{fontSize:40}}>🎉</div>
         <h2 style={{color:"var(--azul-oscuro)"}}>¡Ya formas parte de CANVAS!</h2>
-        <p>Tu contraseña temporal es:</p>
-        <div style={{fontSize:22,fontWeight:800,background:"var(--fondo)",padding:12,borderRadius:10,letterSpacing:1}}>{tempPw}</div>
-        <p style={{fontSize:13,color:"var(--gris)"}}>Guárdala bien — podrás cambiarla más adelante desde tu perfil.</p>
+        <p style={{color:"var(--gris)"}}>Ya puedes entrar con tu email y la contraseña que has elegido.</p>
         <button className="btn-primary" style={{width:"100%",marginTop:10}} onClick={()=>window.location.reload()}>Ir a mi perfil</button>
       </div>
     );
@@ -355,17 +379,30 @@ function RegisterForm({onBack}){
       <form onSubmit={submit}>
         <Field label="Nombre completo del alumno/a"><input required value={f.display_name} onChange={e=>upd("display_name",e.target.value)}/></Field>
         <Field label="Email (será tu usuario de acceso)"><input type="email" required value={f.email} onChange={e=>upd("email",e.target.value)}/></Field>
+        <div className="row">
+          <div className="col"><Field label="Elige una contraseña"><input type="password" required minLength={6} value={f.password} onChange={e=>upd("password",e.target.value)}/></Field></div>
+          <div className="col"><Field label="Repite la contraseña"><input type="password" required value={f.password2} onChange={e=>upd("password2",e.target.value)}/></Field></div>
+        </div>
         <Field label="Fecha de nacimiento"><input type="date" required value={f.birthdate} onChange={e=>upd("birthdate",e.target.value)}/></Field>
         <Field label="Elige tu clase (toca sobre el horario)">
           <WeeklyTimetable groups={groups} profiles={[]} onSelect={g=>upd("group_id",g.id)} selectedId={f.group_id}/>
           {!f.group_id && <div style={{fontSize:12,color:"var(--gris)",marginTop:6}}>Toca una clase del horario de arriba para seleccionarla.</div>}
           {f.group_id && (()=>{const g=groups.find(gg=>String(gg.id)===String(f.group_id)); return g && <div className="ok" style={{marginTop:6}}>Has elegido: {g.name} · {DNF[g.day-1]} {g.time_start}-{g.time_end} · {g.teacher}</div>;})()}
         </Field>
-        <Field label="Nombre del adulto responsable"><input required value={f.guardian_name} onChange={e=>upd("guardian_name",e.target.value)}/></Field>
-        <div className="row">
-          <div className="col"><Field label="Teléfono de contacto"><input required value={f.guardian_phone} onChange={e=>upd("guardian_phone",e.target.value)}/></Field></div>
-          <div className="col"><Field label="Email de contacto (opcional)"><input type="email" value={f.guardian_email} onChange={e=>upd("guardian_email",e.target.value)}/></Field></div>
-        </div>
+        {isMinor ? (
+          <>
+            <Field label="Nombre del adulto responsable"><input required value={f.guardian_name} onChange={e=>upd("guardian_name",e.target.value)}/></Field>
+            <div className="row">
+              <div className="col"><Field label="Teléfono de contacto del adulto"><input required value={f.guardian_phone} onChange={e=>upd("guardian_phone",e.target.value)}/></Field></div>
+              <div className="col"><Field label="Email de contacto (opcional)"><input type="email" value={f.guardian_email} onChange={e=>upd("guardian_email",e.target.value)}/></Field></div>
+            </div>
+          </>
+        ) : (
+          <div className="row">
+            <div className="col"><Field label="Tu teléfono de contacto"><input required value={f.guardian_phone} onChange={e=>upd("guardian_phone",e.target.value)}/></Field></div>
+            <div className="col"><Field label="Email de contacto (opcional)"><input type="email" value={f.guardian_email} onChange={e=>upd("guardian_email",e.target.value)}/></Field></div>
+          </div>
+        )}
         <Field label="Forma de pago">
           <select value={f.preferred_payment_method} onChange={e=>upd("preferred_payment_method",e.target.value)}>
             <option value="transferencia">Transferencia</option>
@@ -383,14 +420,17 @@ function RegisterForm({onBack}){
             <input type="checkbox" style={{width:"auto",marginTop:3}} checked={f.conditions_accepted} onChange={e=>upd("conditions_accepted",e.target.checked)}/>
             <span style={{fontSize:13}}>He leído y acepto las condiciones de la academia.</span>
           </label>
-          <Field label="Firma (nombre y apellidos del adulto responsable)">
+          <Field label={isMinor ? "Firma (nombre y apellidos del adulto responsable)" : "Firma (nombre y apellidos del alumno/a)"}>
             <input value={f.conditions_signature} onChange={e=>upd("conditions_signature",e.target.value)} placeholder="Escribe tu nombre completo como firma"/>
           </Field>
         </div>
         <div style={{background:"var(--fondo)",borderRadius:10,padding:12,fontSize:13,marginBottom:12}}>
           <label style={{display:"flex",gap:8,alignItems:"flex-start"}}>
             <input type="checkbox" style={{width:"auto",marginTop:3}} checked={f.privacy_consent} onChange={e=>upd("privacy_consent",e.target.checked)}/>
-            <span>He leído y acepto que los datos del menor (nombre completo y fecha de nacimiento) y del adulto responsable (nombre y contacto) se recogen con mi consentimiento y se usan exclusivamente para la gestión académica de CANVAS: organización de clases, control de asistencia, comunicación con la familia y facturación. La fecha de nacimiento se usa también para felicitar al alumno en su cumpleaños dentro de la app. No se cederán a terceros. Puedo solicitar la modificación o eliminación de estos datos escribiendo a <b>canvas.vall@gmail.com</b>.</span>
+            <span>{isMinor
+              ? <>He leído y acepto que los datos del menor (nombre completo y fecha de nacimiento) y del adulto responsable (nombre y contacto) se recogen con mi consentimiento y se usan exclusivamente para la gestión académica de CANVAS: organización de clases, control de asistencia, comunicación con la familia y facturación. La fecha de nacimiento se usa también para felicitar al alumno en su cumpleaños dentro de la app. No se cederán a terceros. Puedo solicitar la modificación o eliminación de estos datos escribiendo a <b>canvas.vall@gmail.com</b>.</>
+              : <>He leído y acepto que mis datos (nombre completo, fecha de nacimiento y contacto) se recogen con mi consentimiento y se usan exclusivamente para la gestión académica de CANVAS: organización de clases, control de asistencia y facturación. La fecha de nacimiento se usa también para felicitarme en mi cumpleaños dentro de la app. No se cederán a terceros. Puedo solicitar la modificación o eliminación de estos datos escribiendo a <b>canvas.vall@gmail.com</b>.</>
+            }</span>
           </label>
         </div>
         {err && <div className="err">{err}</div>}
@@ -551,6 +591,25 @@ function RecoveryBookingPanel({profile,groups}){
   );
 }
 
+function CalendarInfoBanner(){
+  const inCourse = todayISO>=COURSE_START && todayISO<=COURSE_END;
+  const closureToday = SCHOOL_CLOSURES.find(c=>todayISO>=c.start && todayISO<=c.end);
+  const upcoming = nextClosure(todayISO);
+  let msg;
+  if(!inCourse && todayISO<COURSE_START){
+    const d = new Date(COURSE_START+"T00:00:00");
+    msg = `Las clases del nuevo curso empiezan el ${d.getDate()} de ${MN[d.getMonth()+1]} de ${d.getFullYear()}, siguiendo el calendario escolar de Castilla y León.`;
+  } else if(closureToday){
+    msg = `Hoy no hay clase: ${closureToday.label}.`;
+  } else if(upcoming){
+    const d = new Date(upcoming.start+"T00:00:00");
+    msg = `Próximo día sin clase: ${d.getDate()} de ${MN[d.getMonth()+1]} — ${upcoming.label}.`;
+  } else {
+    msg = "La academia sigue el calendario escolar oficial de Castilla y León.";
+  }
+  return <div className="card" style={{marginBottom:14,fontSize:13,color:"var(--gris)",borderLeft:"4px solid var(--azul-claro)"}}>📅 {msg}</div>;
+}
+
 /* ============================================================
    VISTA ALUMNO
    ============================================================ */
@@ -595,6 +654,7 @@ function StudentApp({profile,onLogout}){
           {profile.enrollment_fee>0 && !profile.enrollment_fee_paid && <div className="badge badge-warn">Matrícula pendiente: {profile.enrollment_fee}€</div>}
         </div>
 
+        <CalendarInfoBanner/>
         <MySessionsPanel profile={profile} group={group}/>
         <RecoveryBookingPanel profile={profile} groups={allGroups}/>
 
@@ -605,7 +665,8 @@ function StudentApp({profile,onLogout}){
             : thisMonthPayment?.status==="uploaded"
               ? <span className="badge badge-warn">Justificante subido, pendiente de validar</span>
               : <span className="badge badge-bad">Pendiente</span>}
-          <p style={{fontSize:14,marginTop:10}}>Cuota: <b>{profile.fee}€</b>. Transferencia al IBAN: <b>{IBAN}</b> (titular: Laura Sanz — concepto: {profile.display_name}).</p>
+          <p style={{fontSize:14,marginTop:10}}>Cuota: <b>{profile.fee}€</b>. Transferencia al IBAN: <b>{IBAN}</b> (titular: Laura Sanz).</p>
+          <p style={{fontSize:13,color:"var(--rojo)",marginTop:-4}}>⚠️ Importante: en el <b>concepto</b> de la transferencia pon el nombre del alumno/a (<b>{profile.display_name}</b>), para poder identificar tu pago.</p>
           <input type="file" accept="image/*,.pdf" onChange={e=>setFile(e.target.files[0])}/>
           <button className="btn-primary" style={{marginTop:8}} onClick={upload}>Subir justificante</button>
           {msg && <p style={{fontSize:13,marginTop:6}}>{msg}</p>}
@@ -697,6 +758,7 @@ function TeacherApp({profile,onLogout}){
       <div className="topbar"><Logo size={30} dark={true}/><button className="btn-ghost" onClick={onLogout}>Salir</button></div>
       <div className="container">
         <h2 style={{color:"var(--azul-oscuro)"}}>Hola, {profile.display_name} 👋</h2>
+        <CalendarInfoBanner/>
         {birthdaysToday.length>0 && (
           <div className="card" style={{marginBottom:14,borderLeft:"4px solid var(--mostaza)"}}>
             {birthdaysToday.map(b=><div key={b.id}>🎂 ¡Hoy es el cumpleaños de <b>{b.display_name}</b> ({ageFromBirthdate(b.birthdate)} años)!</div>)}
@@ -743,6 +805,7 @@ function CEODashboard({groups,profiles,payments,expenses}){
 
   return (
     <div>
+      <CalendarInfoBanner/>
       {birthdaysToday.length>0 && (
         <div className="card" style={{marginBottom:14,borderLeft:"4px solid var(--mostaza)"}}>
           {birthdaysToday.map(b=><div key={b.id}>🎂 ¡Hoy es el cumpleaños de <b>{b.display_name}</b> ({ageFromBirthdate(b.birthdate)} años)!</div>)}
