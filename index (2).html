@@ -232,7 +232,13 @@ function WeeklyTimetable({groups, profiles, onSelect, selectedId}){
                       const full = count>=MAX;
                       const selected = String(selectedId)===String(g.id);
                       const inner = (
-                        <div style={{background: full?"#F0F0F0":"#fff", border:`2px solid ${selected?"var(--mostaza)":TM[g.teacher]||"#ddd"}`, borderRadius:10, padding:"6px 8px", marginBottom:6, opacity: full?0.6:1}}>
+                        <div style={{
+                          background: selected ? "#FFF3D6" : (full?"#F0F0F0":"#fff"),
+                          border:`2px solid ${selected?"var(--mostaza)":TM[g.teacher]||"#ddd"}`,
+                          boxShadow: selected ? "0 0 0 3px rgba(233,168,0,0.25)" : "none",
+                          borderRadius:10, padding:"6px 8px", marginBottom:6, opacity: full?0.6:1, position:"relative"
+                        }}>
+                          {selected && <div style={{position:"absolute",top:-8,right:-8,background:"var(--mostaza)",color:"#fff",borderRadius:"50%",width:20,height:20,display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:900,boxShadow:"0 1px 4px rgba(0,0,0,.25)"}}>✓</div>}
                           <div style={{fontWeight:700,fontSize:13}}>{g.name}</div>
                           <div style={{fontSize:11,color:TM[g.teacher]||"var(--gris)"}}>{g.teacher} · {g.time_start}-{g.time_end}</div>
                           <div style={{fontSize:11,color: full? "var(--rojo)" : "var(--gris)"}}>{full?"Completa":`${count}/${MAX} plazas`}</div>
