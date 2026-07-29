@@ -75,7 +75,18 @@ const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
    ============================================================ */
 const TM = { Luz:"#E9A800", Sonia:"#6FC2D8", Magaly:"#2350A0", Patry:"#E05353", Inge:"#3FAE6B", Nuria:"#9B6FD8" };
 const TEACHERS = ["Luz","Sonia","Magaly","Patry","Inge","Nuria"];
-const MAX = 8;
+const MAX = 8; // aforo por defecto si una clase no tiene uno propio
+function capOf(g){ return g.max_capacity || MAX; }
+function classColor(name){
+  if(!name) return "#8A93A6";
+  if(name.includes("Aerograf")) return "#E9A800"; // amarillo
+  if(name.includes("Infantil")) return "#6FC2D8"; // azul clarito
+  if(name.includes("Juvenil")) return "#4FBF8B"; // verde-azulado (no especificado, asumido)
+  if(name.includes("Adultos")) return "#2350A0"; // azul oscuro
+  if(name.includes("Acuarela")) return "#9B6FD8"; // morado
+  if(name.includes("Textil") || name.includes("Manos Creativas")) return "#F0932B"; // naranja
+  return "#8A93A6";
+}
 const DNF = ["Lunes","Martes","Miércoles","Jueves","Viernes"];
 const MN = ["","Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
 const STANDARD_ENROLLMENT_FEE = 10; // matrícula estándar
@@ -229,19 +240,21 @@ function WeeklyTimetable({groups, profiles, onSelect, selectedId}){
                   <td key={day} style={{verticalAlign:"top",minWidth:130}}>
                     {cellGs.map(g=>{
                       const count = g.current_count||0;
-                      const full = count>=MAX;
+                      const cap = capOf(g);
+                      const full = count>=cap;
                       const selected = String(selectedId)===String(g.id);
+                      const clr = classColor(g.name);
                       const inner = (
                         <div style={{
                           background: selected ? "#FFF3D6" : (full?"#F0F0F0":"#fff"),
-                          border:`2px solid ${selected?"var(--mostaza)":TM[g.teacher]||"#ddd"}`,
+                          border:`2px solid ${selected?"var(--mostaza)":clr}`,
                           boxShadow: selected ? "0 0 0 3px rgba(233,168,0,0.25)" : "none",
                           borderRadius:10, padding:"6px 8px", marginBottom:6, opacity: full?0.6:1, position:"relative"
                         }}>
                           {selected && <div style={{position:"absolute",top:-8,right:-8,background:"var(--mostaza)",color:"#fff",borderRadius:"50%",width:20,height:20,display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:900,boxShadow:"0 1px 4px rgba(0,0,0,.25)"}}>✓</div>}
                           <div style={{fontWeight:700,fontSize:13}}>{g.name}</div>
-                          <div style={{fontSize:11,color:TM[g.teacher]||"var(--gris)"}}>{g.teacher} · {g.time_start}-{g.time_end}</div>
-                          <div style={{fontSize:11,color: full? "var(--rojo)" : "var(--gris)"}}>{full?"Completa":`${count}/${MAX} plazas`}</div>
+                          <div style={{fontSize:11,color:clr}}>{g.teacher} · {g.time_start}-{g.time_end}</div>
+                          <div style={{fontSize:11,color: full? "var(--rojo)" : "var(--gris)"}}>{full?"Completa":`${count}/${cap} plazas`}</div>
                         </div>
                       );
                       return onSelect
@@ -260,17 +273,43 @@ function WeeklyTimetable({groups, profiles, onSelect, selectedId}){
 }
 
 
-function LoginScreen(){
-  const [mode,setMode] = useState("login"); // login | register
+function PublicWorkshopsView({onBack}){
+  const [workshops,setWorkshops] = useState(null);
+  useEffect(()=>{
+    sb.from("workshops").select("*").order("start_date").then(({data})=>setWorkshops(data||[]));
+  },[]);
+
   return (
-    <div className="container" style={{maxWidth:480,paddingTop:40}}>
-      <div style={{textAlign:"center",marginBottom:24}}><Logo size={56}/></div>
-      {mode==="login" ? <LoginForm onRegister={()=>setMode("register")}/> : <RegisterForm onBack={()=>setMode("login")}/>}
+    <div className="card">
+      <h2 style={{marginTop:0,color:"var(--azul-oscuro)"}}>Talleres y campamentos 🎨</h2>
+      <p style={{fontSize:13,color:"var(--gris)"}}>Esto es una primera versión — pronto podrás inscribirte aquí mismo, sin necesidad de tener ya una cuenta en CANVAS.</p>
+      {workshops===null && <div className="loader"></div>}
+      {workshops && workshops.length===0 && <div className="empty">Todavía no hay talleres publicados. ¡Vuelve pronto!</div>}
+      {workshops && workshops.map(w=>(
+        <div key={w.id} className="card" style={{marginBottom:10,borderLeft:"4px solid var(--azul-claro)"}}>
+          <div style={{fontWeight:700}}>{w.name}</div>
+          <div style={{fontSize:13,color:"var(--gris)"}}>{w.type==="campamento"?"Campamento":"Taller"} · {w.start_date} → {w.end_date}{w.teacher && ` · ${w.teacher}`}</div>
+          {w.total_price>0 && <div style={{fontSize:13,marginTop:4}}>Precio: <b>{w.total_price}€</b></div>}
+        </div>
+      ))}
+      <button className="btn-ghost" style={{width:"100%",marginTop:10}} onClick={onBack}>← Volver</button>
     </div>
   );
 }
 
-function LoginForm({onRegister}){
+function LoginScreen(){
+  const [mode,setMode] = useState("login"); // login | register | talleres
+  return (
+    <div className="container" style={{maxWidth:480,paddingTop:40}}>
+      <div style={{textAlign:"center",marginBottom:24}}><Logo size={56}/></div>
+      {mode==="login" && <LoginForm onRegister={()=>setMode("register")} onTalleres={()=>setMode("talleres")}/>}
+      {mode==="register" && <RegisterForm onBack={()=>setMode("login")}/>}
+      {mode==="talleres" && <PublicWorkshopsView onBack={()=>setMode("login")}/>}
+    </div>
+  );
+}
+
+function LoginForm({onRegister,onTalleres}){
   const [email,setEmail]=useState(""); const [password,setPassword]=useState("");
   const [err,setErr]=useState(""); const [loading,setLoading]=useState(false);
 
@@ -288,11 +327,14 @@ function LoginForm({onRegister}){
         <Field label="Email"><input type="email" required value={email} onChange={e=>setEmail(e.target.value)} placeholder="tu@email.com"/></Field>
         <Field label="Contraseña"><input type="password" required value={password} onChange={e=>setPassword(e.target.value)}/></Field>
         {err && <div className="err">{err}</div>}
-        <button className="btn-primary" style={{width:"100%",marginTop:8}} disabled={loading}>{loading?"Entrando…":"Entrar"}</button>
+        <button className="btn-dark" style={{width:"100%",marginTop:8}} disabled={loading}>{loading?"Entrando…":"Entrar"}</button>
       </form>
       <div style={{textAlign:"center",marginTop:18,fontSize:14,color:"var(--gris)"}}>¿Primera vez en CANVAS?</div>
       <button className="btn-primary" style={{width:"100%",marginTop:10,fontSize:17,padding:"14px 16px",background:"linear-gradient(135deg,var(--mostaza),#F5C542)",boxShadow:"0 4px 16px rgba(233,168,0,.4)"}} onClick={onRegister}>
         🎨 ¡Inscríbete aquí!
+      </button>
+      <button className="btn-ghost" style={{width:"100%",marginTop:10}} onClick={onTalleres}>
+        🖼️ Ver talleres sin cuenta
       </button>
     </div>
   );
@@ -330,7 +372,7 @@ function RegisterForm({onBack}){
     if(f.password.length<6){ setErr("La contraseña debe tener al menos 6 caracteres."); return; }
     if(f.password!==f.password2){ setErr("Las dos contraseñas no coinciden."); return; }
     const group = groups.find(g=>String(g.id)===String(f.group_id));
-    if(group && group.current_count >= MAX){ setErr("Vaya, esa clase se acaba de completar. Elige otra, por favor."); return; }
+    if(group && group.current_count >= capOf(group)){ setErr("Vaya, esa clase se acaba de completar. Elige otra, por favor."); return; }
 
     setLoading(true);
     const { data: signUpData, error: signUpErr } = await sb.auth.signUp({ email: f.email.trim(), password: f.password });
@@ -547,7 +589,7 @@ function RecoveryBookingPanel({profile,groups}){
       if(g.id===profile.group_id) return;
       nextOccurrences(g.day,2).forEach(date=> list.push({group:g,date}));
     });
-    return list.filter(s=>hoursUntil(s.date,s.group.time_start)>=3 && (s.group.current_count||0)<MAX)
+    return list.filter(s=>hoursUntil(s.date,s.group.time_start)>=3 && (s.group.current_count||0)<capOf(s.group))
                 .sort((a,b)=> sessionDateTime(a.date,a.group.time_start) - sessionDateTime(b.date,b.group.time_start));
   },[groups]);
 
@@ -656,7 +698,7 @@ function StudentApp({profile,onLogout}){
         {isBirthday(profile.birthdate) && <BirthdayBanner name={profile.display_name}/>}
         <div className="card" style={{marginBottom:14}}>
           <h2 style={{marginTop:0,color:"var(--azul-oscuro)"}}>¡Hola, {profile.display_name.split(" ")[0]}! 👋</h2>
-          {group ? <p>Tu clase: <b>{group.name}</b> — {DNF[group.day-1]} {group.time_start}-{group.time_end} con <b style={{color:TM[group.teacher]}}>{group.teacher}</b></p> : <p>Aún no tienes clase asignada — escríbenos y te la asignamos.</p>}
+          {group ? <p>Tu clase: <b>{group.name}</b> — {DNF[group.day-1]} {group.time_start}-{group.time_end} con <b style={{color:classColor(group.name)}}>{group.teacher}</b></p> : <p>Aún no tienes clase asignada — escríbenos y te la asignamos.</p>}
           {profile.enrollment_fee>0 && !profile.enrollment_fee_paid && <div className="badge badge-warn">Matrícula pendiente: {profile.enrollment_fee}€</div>}
         </div>
 
@@ -777,17 +819,17 @@ function TeacherApp({profile,onLogout}){
         {tab==="mine" && (
           todayGroups.length===0 ? <div className="empty">Hoy no tienes clases 🎨</div> :
           todayGroups.map(g=>(
-            <div key={g.id} className="card" style={{marginBottom:10,borderLeft:`4px solid ${TM[g.teacher]}`}}>
+            <div key={g.id} className="card" style={{marginBottom:10,borderLeft:`4px solid ${classColor(g.name)}`}}>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                <div><b>{g.name}</b> · {g.time_start}-{g.time_end} · {effectiveRoster(g,profiles).length}/{MAX} alumnos</div>
+                <div><b>{g.name}</b> · {g.time_start}-{g.time_end} · {effectiveRoster(g,profiles).length}/{capOf(g)} alumnos</div>
                 <button className="btn-secondary" onClick={()=>setSession({group:g,date:todayISO})}>Pasar lista hoy</button>
               </div>
             </div>
           ))
         )}
         {tab==="all" && groups.map(g=>(
-          <div key={g.id} className="card" style={{marginBottom:10,borderLeft:`4px solid ${TM[g.teacher]}`}}>
-            <b>{DNF[g.day-1]}</b> {g.time_start}-{g.time_end} · {g.name} · {g.teacher} · {effectiveRoster(g,profiles).length}/{MAX}
+          <div key={g.id} className="card" style={{marginBottom:10,borderLeft:`4px solid ${classColor(g.name)}`}}>
+            <b>{DNF[g.day-1]}</b> {g.time_start}-{g.time_end} · {g.name} · {g.teacher} · {effectiveRoster(g,profiles).length}/{capOf(g)}
           </div>
         ))}
       </div>
@@ -802,7 +844,7 @@ function TeacherApp({profile,onLogout}){
 function CEODashboard({groups,profiles,payments,expenses}){
   const students = profiles.filter(p=>p.role==="student");
   const totalStudents = groups.reduce((s,g)=>s+effectiveRoster(g,profiles).length,0);
-  const occupancy = groups.length? Math.round(100*groups.reduce((s,g)=>s+Math.min(effectiveRoster(g,profiles).length,MAX),0)/(groups.length*MAX)) : 0;
+  const occupancy = groups.length? Math.round(100*groups.reduce((s,g)=>s+Math.min(effectiveRoster(g,profiles).length,capOf(g)),0)/groups.reduce((s,g)=>s+capOf(g),0)) : 0;
   const validated = payments.filter(p=>p.year===CY&&p.month===CM&&p.status==="validated").reduce((s,p)=>s+(p.amount||0),0);
   const pendingCount = students.filter(s=>!payments.some(p=>p.student_id===s.id&&p.year===CY&&p.month===CM&&p.status!=="pending")).length;
   const monthExpenses = expenses.filter(e=>e.year===CY&&e.month===CM).reduce((s,e)=>s+e.amount,0);
@@ -859,8 +901,8 @@ function GroupsView({groups,profiles,reload}){
         <div key={i} style={{marginBottom:14}}>
           <h4 style={{color:"var(--azul-oscuro)"}}>{dn}</h4>
           {groups.filter(g=>g.day===i+1).map(g=>(
-            <div key={g.id} className="card" style={{marginBottom:8,borderLeft:`4px solid ${TM[g.teacher]||"#ccc"}`,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-              <div>{g.time_start}-{g.time_end} · <b>{g.name}</b> · {g.teacher} {g.level && `(${g.level})`} · {effectiveRoster(g,profiles).length}/{MAX} · {g.fee}€</div>
+            <div key={g.id} className="card" style={{marginBottom:8,borderLeft:`4px solid ${classColor(g.name)}`,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+              <div>{g.time_start}-{g.time_end} · <b>{g.name}</b> · {g.teacher} {g.level && `(${g.level})`} · {effectiveRoster(g,profiles).length}/{capOf(g)} · {g.fee}€</div>
               <button className="btn-ghost" onClick={()=>openEdit(g)}>Editar</button>
             </div>
           ))}
@@ -880,7 +922,10 @@ function GroupsView({groups,profiles,reload}){
               <div className="col"><Field label="Fin"><input type="time" value={editing.time_end} onChange={e=>setEditing({...editing,time_end:e.target.value})}/></Field></div>
             </div>
             <Field label="Nivel/edad (opcional)"><input value={editing.level||""} onChange={e=>setEditing({...editing,level:e.target.value})}/></Field>
-            <Field label="Cuota mensual (€)"><input type="number" value={editing.fee} onChange={e=>setEditing({...editing,fee:parseFloat(e.target.value)})}/></Field>
+            <div className="row">
+              <div className="col"><Field label="Cuota mensual (€)"><input type="number" value={editing.fee} onChange={e=>setEditing({...editing,fee:parseFloat(e.target.value)})}/></Field></div>
+              <div className="col"><Field label="Plazas máximas"><input type="number" value={editing.max_capacity||8} onChange={e=>setEditing({...editing,max_capacity:parseInt(e.target.value)})}/></Field></div>
+            </div>
             <Field label="Alumnos que no se han inscrito por la app (separados por coma)"><textarea rows={3} value={studentsText} onChange={e=>setStudentsText(e.target.value)}/></Field>
             <div className="row"><button className="btn-ghost" onClick={()=>setEditing(null)}>Cancelar</button><button className="btn-primary" onClick={()=>save(editing)}>Guardar</button></div>
           </div>
