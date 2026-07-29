@@ -8,6 +8,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
 <style>
   :root{
     --mostaza:#E9A800; --azul-claro:#6FC2D8; --azul-oscuro:#2350A0; --fondo:#EEF5FF;
@@ -77,6 +78,15 @@ const TM = { Luz:"#E9A800", Sonia:"#6FC2D8", Magaly:"#2350A0", Patry:"#E05353", 
 const TEACHERS = ["Luz","Sonia","Magaly","Patry","Inge","Nuria"];
 const MAX = 8; // aforo por defecto si una clase no tiene uno propio
 function capOf(g){ return g.max_capacity || MAX; }
+
+// Cuota combinada: si un alumno tiene 2 o más clases, se suman las cuotas
+// y se aplica un 5% de descuento sobre el total (política de la academia).
+const MULTI_CLASS_DISCOUNT = 0.05;
+function computeTotalFee(fees){
+  const sum = fees.reduce((s,f)=>s+(f||0),0);
+  if(fees.length>=2) return Math.round(sum*(1-MULTI_CLASS_DISCOUNT)*100)/100;
+  return sum;
+}
 function classColor(name){
   if(!name) return "#8A93A6";
   if(name.includes("Aerograf")) return "#E9A800"; // amarillo
@@ -129,6 +139,24 @@ const CONDITIONS_TEXT = [
 ];
 const IBAN = "ES48 1583 0001 1190 0005 3764"; // Revolut Business Pro — titular: Laura Sanz
 
+// EmailJS — rellena estos 3 valores cuando tengas tu cuenta creada (emailjs.com)
+const EMAILJS_PUBLIC_KEY = "u8MI4wxwkid6PEkAM";
+const EMAILJS_SERVICE_ID = "service_canvasapp";
+const EMAILJS_TEMPLATE_ID = "template_tvoaa1h";
+if(EMAILJS_PUBLIC_KEY) emailjs.init(EMAILJS_PUBLIC_KEY);
+
+async function sendWelcomeEmail(toEmail, toName){
+  if(!EMAILJS_PUBLIC_KEY || !EMAILJS_SERVICE_ID || !EMAILJS_TEMPLATE_ID){
+    console.warn("EmailJS no está configurado todavía — no se envía email de bienvenida.");
+    return;
+  }
+  try{
+    await emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, { to_email: toEmail, to_name: toName });
+  }catch(e){
+    console.warn("No se pudo enviar el email de bienvenida:", e);
+  }
+}
+
 const NOW = new Date();
 const CY = NOW.getFullYear(), CM = NOW.getMonth()+1;
 const todayISO = NOW.toISOString().split("T")[0];
@@ -148,9 +176,13 @@ function ageFromBirthdate(dateStr){
   return age;
 }
 
-function effectiveRoster(g, profilesArr){
+function effectiveRoster(g, profilesArr, extraEnrollments){
   const extra = (profilesArr||[]).filter(p=>p.role==="student" && p.group_id===g.id).map(p=>p.display_name);
-  return [...(g.students||[]), ...extra];
+  const extra2 = (extraEnrollments||[]).filter(e=>e.group_id===g.id).map(e=>{
+    const p = (profilesArr||[]).find(pp=>pp.id===e.student_id);
+    return p ? p.display_name : null;
+  }).filter(Boolean);
+  return [...(g.students||[]), ...extra, ...extra2];
 }
 function nextOccurrences(dayOfWeek, count=3){
   const dates=[];
@@ -218,6 +250,15 @@ function Field({label,children}){
 }
 
 function WeeklyTimetable({groups, profiles, onSelect, selectedId}){
+  const scrollRef = useRef(null);
+  function onWheel(e){
+    const el = scrollRef.current;
+    if(!el) return;
+    if(el.scrollWidth > el.clientWidth){
+      e.preventDefault();
+      el.scrollLeft += e.deltaY;
+    }
+  }
   const slots = useMemo(()=>{
     const set = new Set(groups.map(g=>g.time_start));
     return Array.from(set).sort();
@@ -226,7 +267,7 @@ function WeeklyTimetable({groups, profiles, onSelect, selectedId}){
     return groups.filter(g=>g.day===day && g.time_start===slot);
   }
   return (
-    <div style={{overflowX:"auto"}}>
+    <div ref={scrollRef} onWheel={onWheel} style={{overflowX:"auto"}}>
       <table style={{minWidth:600}}>
         <thead><tr><th style={{width:60}}>Hora</th>{DNF.map(d=><th key={d}>{d}</th>)}</tr></thead>
         <tbody>
@@ -343,8 +384,9 @@ function LoginForm({onRegister,onTalleres}){
 function RegisterForm({onBack}){
   const [groups,setGroups] = useState(null);
   const [loadErr,setLoadErr] = useState("");
-  const [step,setStep] = useState("form"); // form | done
+  const [step,setStep] = useState("account"); // account | details | done
   const [err,setErr]=useState(""); const [loading,setLoading]=useState(false);
+  const [uid,setUid] = useState(null);
   const [f,setF] = useState({
     display_name:"", email:"", password:"", password2:"", group_id:"", birthdate:"", guardian_name:"", guardian_phone:"",
     guardian_email:"", payment_type:"monthly", preferred_payment_method:"transferencia", privacy_consent:false,
@@ -362,17 +404,12 @@ function RegisterForm({onBack}){
   const age = f.birthdate ? ageFromBirthdate(f.birthdate) : null;
   const isMinor = age===null || age < 18;
 
-  async function submit(e){
+  async function submitAccount(e){
     e.preventDefault(); setErr("");
-    if(!f.privacy_consent){ setErr("Tienes que aceptar las condiciones de privacidad para continuar."); return; }
-    if(!f.conditions_accepted || !f.conditions_signature.trim()){ setErr("Tienes que leer y firmar las condiciones de la academia para continuar."); return; }
-    if(isMinor && !f.guardian_name.trim()){ setErr("Indica el nombre del adulto responsable."); return; }
-    if(!f.guardian_phone.trim()){ setErr("Indica un teléfono de contacto."); return; }
-    if(!f.group_id){ setErr("Elige una clase."); return; }
     if(f.password.length<6){ setErr("La contraseña debe tener al menos 6 caracteres."); return; }
     if(f.password!==f.password2){ setErr("Las dos contraseñas no coinciden."); return; }
-    const group = groups.find(g=>String(g.id)===String(f.group_id));
-    if(group && group.current_count >= capOf(group)){ setErr("Vaya, esa clase se acaba de completar. Elige otra, por favor."); return; }
+    if(!f.display_name.trim()){ setErr("Indica el nombre completo."); return; }
+    if(!f.birthdate){ setErr("Indica la fecha de nacimiento."); return; }
 
     setLoading(true);
     const { data: signUpData, error: signUpErr } = await sb.auth.signUp({ email: f.email.trim(), password: f.password });
@@ -381,23 +418,45 @@ function RegisterForm({onBack}){
       setErr(signUpErr.message.includes("already registered") ? "Ese email ya está registrado. Prueba a iniciar sesión." : signUpErr.message);
       return;
     }
-    const uid = signUpData.user?.id;
-    if(!uid){ setLoading(false); setErr("No se pudo crear la cuenta. Inténtalo de nuevo en unos segundos."); return; }
-
-    const fee = group.fee;
-    const enrollmentFee = isAugustNow ? 0 : STANDARD_ENROLLMENT_FEE;
+    const newUid = signUpData.user?.id;
+    if(!newUid){ setLoading(false); setErr("No se pudo crear la cuenta. Inténtalo de nuevo en unos segundos."); return; }
 
     const { error: profileErr } = await sb.from("profiles").insert({
-      id: uid, role:"student", display_name:f.display_name, group_id:group.id, fee,
-      payment_type:f.payment_type, birthdate: f.birthdate||null,
-      guardian_name: isMinor ? f.guardian_name : null, guardian_phone:f.guardian_phone, guardian_email:f.guardian_email,
-      preferred_payment_method:f.preferred_payment_method, student_status:"nuevo",
-      enrollment_month: MN[CM]+" "+CY, enrollment_fee: enrollmentFee, enrollment_fee_paid:false,
-      privacy_consent:true, privacy_consent_at: new Date().toISOString(),
-      conditions_accepted:true, conditions_signature:f.conditions_signature.trim(), conditions_accepted_at: new Date().toISOString()
+      id: newUid, role:"student", display_name:f.display_name, birthdate:f.birthdate,
+      student_status:"nuevo", enrollment_month: MN[CM]+" "+CY,
+      privacy_consent:false, conditions_accepted:false
     });
     setLoading(false);
     if(profileErr){ setErr("Tu cuenta se creó pero hubo un problema guardando tus datos: "+profileErr.message+". Escríbenos y lo arreglamos."); return; }
+
+    sendWelcomeEmail(f.email.trim(), f.display_name);
+    setUid(newUid);
+    setStep("details");
+  }
+
+  async function submitDetails(e){
+    e.preventDefault(); setErr("");
+    if(!f.privacy_consent){ setErr("Tienes que aceptar las condiciones de privacidad para continuar."); return; }
+    if(!f.conditions_accepted || !f.conditions_signature.trim()){ setErr("Tienes que leer y firmar las condiciones de la academia para continuar."); return; }
+    if(isMinor && !f.guardian_name.trim()){ setErr("Indica el nombre del adulto responsable."); return; }
+    if(!f.guardian_phone.trim()){ setErr("Indica un teléfono de contacto."); return; }
+    if(!f.group_id){ setErr("Elige una clase."); return; }
+    const group = groups.find(g=>String(g.id)===String(f.group_id));
+    if(group && group.current_count >= capOf(group)){ setErr("Vaya, esa clase se acaba de completar. Elige otra, por favor."); return; }
+
+    setLoading(true);
+    const fee = group.fee;
+    const enrollmentFee = isAugustNow ? 0 : STANDARD_ENROLLMENT_FEE;
+    const { error: profileErr } = await sb.from("profiles").update({
+      group_id:group.id, fee, payment_type:f.payment_type,
+      guardian_name: isMinor ? f.guardian_name : null, guardian_phone:f.guardian_phone, guardian_email:f.guardian_email,
+      preferred_payment_method:f.preferred_payment_method,
+      enrollment_fee: enrollmentFee, enrollment_fee_paid:false,
+      privacy_consent:true, privacy_consent_at: new Date().toISOString(),
+      conditions_accepted:true, conditions_signature:f.conditions_signature.trim(), conditions_accepted_at: new Date().toISOString()
+    }).eq("id", uid);
+    setLoading(false);
+    if(profileErr){ setErr("Hubo un problema guardando tu clase: "+profileErr.message+". Escríbenos y lo arreglamos."); return; }
     setStep("done");
   }
 
@@ -416,22 +475,39 @@ function RegisterForm({onBack}){
     );
   }
 
+  if(step==="account"){
+    return (
+      <div className="card">
+        {isAugustNow &&
+          <div style={{background:"var(--mostaza)",color:"#fff",borderRadius:12,padding:"10px 14px",marginBottom:14,fontWeight:700,textAlign:"center"}}>
+            🎨 ¿Te inscribes en agosto? ¡Te regalamos la matrícula!
+          </div>
+        }
+        <h2 style={{marginTop:0,color:"var(--azul-oscuro)"}}>Paso 1 · Crea tu cuenta</h2>
+        <form onSubmit={submitAccount}>
+          <Field label="Nombre completo del alumno/a"><input required value={f.display_name} onChange={e=>upd("display_name",e.target.value)}/></Field>
+          <Field label="Email (será tu usuario de acceso)"><input type="email" required value={f.email} onChange={e=>upd("email",e.target.value)}/></Field>
+          <div className="row">
+            <div className="col"><Field label="Elige una contraseña"><input type="password" required minLength={6} value={f.password} onChange={e=>upd("password",e.target.value)}/></Field></div>
+            <div className="col"><Field label="Repite la contraseña"><input type="password" required value={f.password2} onChange={e=>upd("password2",e.target.value)}/></Field></div>
+          </div>
+          <Field label="Fecha de nacimiento"><input type="date" required value={f.birthdate} onChange={e=>upd("birthdate",e.target.value)}/></Field>
+          {err && <div className="err">{err}</div>}
+          <button className="btn-primary" style={{width:"100%"}} disabled={loading}>{loading?"Creando cuenta…":"Siguiente →"}</button>
+        </form>
+        <div style={{textAlign:"center",marginTop:14,fontSize:14}}>
+          <a href="#" onClick={e=>{e.preventDefault();onBack();}}>← Volver al acceso</a>
+        </div>
+      </div>
+    );
+  }
+
+  // step === "details"
   return (
     <div className="card">
-      {isAugustNow &&
-        <div style={{background:"var(--mostaza)",color:"#fff",borderRadius:12,padding:"10px 14px",marginBottom:14,fontWeight:700,textAlign:"center"}}>
-          🎨 ¿Te inscribes en agosto? ¡Te regalamos la matrícula!
-        </div>
-      }
-      <h2 style={{marginTop:0,color:"var(--azul-oscuro)"}}>Inscripción en CANVAS</h2>
-      <form onSubmit={submit}>
-        <Field label="Nombre completo del alumno/a"><input required value={f.display_name} onChange={e=>upd("display_name",e.target.value)}/></Field>
-        <Field label="Email (será tu usuario de acceso)"><input type="email" required value={f.email} onChange={e=>upd("email",e.target.value)}/></Field>
-        <div className="row">
-          <div className="col"><Field label="Elige una contraseña"><input type="password" required minLength={6} value={f.password} onChange={e=>upd("password",e.target.value)}/></Field></div>
-          <div className="col"><Field label="Repite la contraseña"><input type="password" required value={f.password2} onChange={e=>upd("password2",e.target.value)}/></Field></div>
-        </div>
-        <Field label="Fecha de nacimiento"><input type="date" required value={f.birthdate} onChange={e=>upd("birthdate",e.target.value)}/></Field>
+      <h2 style={{marginTop:0,color:"var(--azul-oscuro)"}}>Paso 2 · Tu clase y tus datos</h2>
+      <p style={{fontSize:13,color:"var(--gris)",marginTop:-8}}>¡Cuenta creada, {f.display_name.split(" ")[0]}! Ahora elige tu clase.</p>
+      <form onSubmit={submitDetails}>
         <Field label="Elige tu clase (toca sobre el horario)">
           <WeeklyTimetable groups={groups} profiles={[]} onSelect={g=>upd("group_id",g.id)} selectedId={f.group_id}/>
           {!f.group_id && <div style={{fontSize:12,color:"var(--gris)",marginTop:6}}>Toca una clase del horario de arriba para seleccionarla.</div>}
@@ -482,11 +558,8 @@ function RegisterForm({onBack}){
           </label>
         </div>
         {err && <div className="err">{err}</div>}
-        <button className="btn-primary" style={{width:"100%"}} disabled={loading}>{loading?"Creando cuenta…":"Inscribirme"}</button>
+        <button className="btn-primary" style={{width:"100%"}} disabled={loading}>{loading?"Guardando…":"Inscribirme"}</button>
       </form>
-      <div style={{textAlign:"center",marginTop:14,fontSize:14}}>
-        <a href="#" onClick={e=>{e.preventDefault();onBack();}}>← Volver al acceso</a>
-      </div>
     </div>
   );
 }
@@ -524,34 +597,39 @@ function App(){
   return <StudentApp profile={profile} onLogout={logout}/>;
 }
 
-function MySessionsPanel({profile,group}){
+function MySessionsPanel({profile,groups}){
   const [cancellations,setCancellations] = useState([]);
   const [msg,setMsg] = useState("");
-  const occurrences = group ? nextOccurrences(group.day, 4) : [];
+
+  const occurrences = useMemo(()=>{
+    const list=[];
+    (groups||[]).forEach(g=> nextOccurrences(g.day,4).forEach(date=>list.push({group:g,date})));
+    return list.sort((a,b)=> sessionDateTime(a.date,a.group.time_start) - sessionDateTime(b.date,b.group.time_start));
+  },[groups]);
 
   function load(){ sb.from("session_cancellations").select("*").eq("student_id",profile.id).then(({data})=>setCancellations(data||[])); }
-  useEffect(load,[group?.id]);
+  useEffect(load,[(groups||[]).map(g=>g.id).join(",")]);
 
-  async function cancelSession(date){
+  async function cancelSession(group,date){
     setMsg("");
     const {error} = await sb.from("session_cancellations").insert({student_id:profile.id, group_id:group.id, session_date:date});
     if(error) setMsg(error.message);
     else { setMsg("Te has dado de baja de esa clase. Ya tienes derecho a recuperarla."); load(); }
   }
 
-  if(!group) return null;
+  if(!groups || groups.length===0) return null;
   return (
     <div className="card" style={{marginBottom:14}}>
       <h3 style={{marginTop:0}}>Mis próximas clases</h3>
-      {occurrences.map(date=>{
-        const cancelled = cancellations.some(c=>c.session_date===date);
+      {occurrences.map(({group,date})=>{
+        const cancelled = cancellations.some(c=>c.session_date===date && c.group_id===group.id);
         const hrs = hoursUntil(date, group.time_start);
         const canCancel = !cancelled && hrs>=5;
         return (
-          <div key={date} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 0",borderBottom:"1px solid #EEF2F8"}}>
-            <span>{date} · {group.time_start}-{group.time_end}{cancelled && <span className="badge badge-warn" style={{marginLeft:8}}>Baja registrada</span>}</span>
+          <div key={group.id+"::"+date} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 0",borderBottom:"1px solid #EEF2F8"}}>
+            <span>{group.name} · {date} · {group.time_start}-{group.time_end}{cancelled && <span className="badge badge-warn" style={{marginLeft:8}}>Baja registrada</span>}</span>
             {!cancelled && (
-              <button className="btn-ghost" disabled={!canCancel} onClick={()=>cancelSession(date)} title={!canCancel?"Ya quedan menos de 5 horas":""}>
+              <button className="btn-ghost" disabled={!canCancel} onClick={()=>cancelSession(group,date)} title={!canCancel?"Ya quedan menos de 5 horas":""}>
                 Darme de baja
               </button>
             )}
@@ -563,15 +641,19 @@ function MySessionsPanel({profile,group}){
   );
 }
 
-function RecoveryBookingPanel({profile,groups}){
+function RecoveryBookingPanel({profile,groups,myGroupIds}){
   const [cancellations,setCancellations] = useState([]);
   const [bookings,setBookings] = useState([]);
+  const [allCancellations,setAllCancellations] = useState([]); // de todo el mundo, para calcular huecos reales
+  const [allBookings,setAllBookings] = useState([]);
   const [voucherCode,setVoucherCode] = useState("");
   const [msg,setMsg] = useState("");
 
   function load(){
     sb.from("session_cancellations").select("*").eq("student_id",profile.id).then(({data})=>setCancellations(data||[]));
     sb.from("session_bookings").select("*").eq("student_id",profile.id).is("cancelled_at",null).then(({data})=>setBookings(data||[]));
+    sb.from("session_cancellations").select("*").then(({data})=>setAllCancellations(data||[]));
+    sb.from("session_bookings").select("*").is("cancelled_at",null).then(({data})=>setAllBookings(data||[]));
   }
   useEffect(load,[]);
 
@@ -583,21 +665,34 @@ function RecoveryBookingPanel({profile,groups}){
   }).length;
   const recoveryCredits = Math.max(0, thisMonthCancellations - thisMonthRecoveries);
 
+  // Huecos reales de una sesión concreta: aforo de la clase - matriculados + bajas ese día - reservas ya hechas ese día
+  function spotsFor(g, date){
+    const cancelsThatDay = allCancellations.filter(c=>c.group_id===g.id && c.session_date===date).length;
+    const bookingsThatDay = allBookings.filter(b=>b.group_id===g.id && b.session_date===date).length;
+    return capOf(g) - (g.current_count||0) + cancelsThatDay - bookingsThatDay;
+  }
+
   const upcomingSessions = useMemo(()=>{
     const list=[];
     groups.forEach(g=>{
-      if(g.id===profile.group_id) return;
-      nextOccurrences(g.day,2).forEach(date=> list.push({group:g,date}));
+      if((myGroupIds||[]).includes(g.id)) return;
+      nextOccurrences(g.day,3).forEach(date=> list.push({group:g,date}));
     });
-    return list.filter(s=>hoursUntil(s.date,s.group.time_start)>=3 && (s.group.current_count||0)<capOf(s.group))
+    return list.filter(s=>hoursUntil(s.date,s.group.time_start)>=3 && spotsFor(s.group,s.date)>0)
                 .sort((a,b)=> sessionDateTime(a.date,a.group.time_start) - sessionDateTime(b.date,b.group.time_start));
-  },[groups]);
+  },[groups,allCancellations,allBookings]);
+
+  const byDate = useMemo(()=>{
+    const m = {};
+    upcomingSessions.forEach(s=>{ (m[s.date]=m[s.date]||[]).push(s); });
+    return Object.entries(m).sort((a,b)=>a[0].localeCompare(b[0]));
+  },[upcomingSessions]);
 
   const [selected,setSelected] = useState("");
 
   async function bookRecovery(){
     setMsg("");
-    if(!selected){ setMsg("Elige una sesión."); return; }
+    if(!selected){ setMsg("Elige una sesión del calendario."); return; }
     const s = upcomingSessions.find(u=>u.group.id+"::"+u.date===selected);
     const {error} = await sb.from("session_bookings").insert({student_id:profile.id, group_id:s.group.id, session_date:s.date, booking_type:"recovery"});
     if(error) setMsg(error.message); else { setMsg("¡Reservado! Nos vemos en esa clase."); load(); }
@@ -605,7 +700,7 @@ function RecoveryBookingPanel({profile,groups}){
 
   async function redeemVoucher(){
     setMsg("");
-    if(!selected){ setMsg("Elige una sesión."); return; }
+    if(!selected){ setMsg("Elige una sesión del calendario."); return; }
     const {data:v} = await sb.from("gift_vouchers").select("*").eq("code",voucherCode.trim()).eq("paid",true).eq("redeemed",false).maybeSingle();
     if(!v){ setMsg("Ese código de bono no es válido o ya se ha canjeado."); return; }
     const s = upcomingSessions.find(u=>u.group.id+"::"+u.date===selected);
@@ -619,20 +714,45 @@ function RecoveryBookingPanel({profile,groups}){
     <div className="card" style={{marginBottom:14}}>
       <h3 style={{marginTop:0}}>Recuperar una clase o canjear un bono</h3>
       <p style={{fontSize:13,color:"var(--gris)"}}>Créditos de recuperación disponibles este mes: <b>{recoveryCredits}</b>. Puedes reservar hasta 3 horas antes de la sesión.</p>
-      <select value={selected} onChange={e=>setSelected(e.target.value)}>
-        <option value="">Elige una clase con hueco…</option>
-        {upcomingSessions.map(s=>(
-          <option key={s.group.id+"::"+s.date} value={s.group.id+"::"+s.date}>
-            {s.date} · {s.group.time_start}-{s.group.time_end} · {s.group.name} ({s.group.teacher})
-          </option>
-        ))}
-      </select>
+
+      {byDate.length===0 && <div className="empty">No hay huecos disponibles en los próximos días.</div>}
+
+      <div style={{display:"flex",gap:10,overflowX:"auto",paddingBottom:6}}>
+        {byDate.map(([date,sessionsThatDay])=>{
+          const d = new Date(date+"T00:00:00");
+          return (
+            <div key={date} style={{minWidth:150,flexShrink:0}}>
+              <div style={{textAlign:"center",fontWeight:700,fontSize:12,color:"var(--azul-oscuro)",marginBottom:6,borderBottom:"2px solid var(--azul-claro)",paddingBottom:4}}>
+                {DNF[((d.getDay()+6)%7)]} {d.getDate()}/{d.getMonth()+1}
+              </div>
+              {sessionsThatDay.map(s=>{
+                const key = s.group.id+"::"+s.date;
+                const sel = selected===key;
+                const spots = spotsFor(s.group,s.date);
+                return (
+                  <div key={key} onClick={()=>setSelected(key)} style={{
+                    cursor:"pointer", marginBottom:6, borderRadius:10, padding:"6px 8px",
+                    background: sel?"#FFF3D6":"#fff",
+                    border:`2px solid ${sel?"var(--mostaza)":classColor(s.group.name)}`,
+                    boxShadow: sel?"0 0 0 3px rgba(233,168,0,0.25)":"none"
+                  }}>
+                    <div style={{fontWeight:700,fontSize:12}}>{s.group.name}</div>
+                    <div style={{fontSize:11,color:classColor(s.group.name)}}>{s.group.teacher} · {s.group.time_start}</div>
+                    <div style={{fontSize:11,color:"var(--gris)"}}>{spots} hueco{spots!==1?"s":""}</div>
+                  </div>
+                );
+              })}
+            </div>
+          );
+        })}
+      </div>
+
       <div className="row" style={{marginTop:10}}>
-        <button className="btn-secondary" disabled={recoveryCredits<=0} onClick={bookRecovery}>Reservar como recuperación</button>
+        <button className="btn-secondary" disabled={recoveryCredits<=0 || !selected} onClick={bookRecovery}>Reservar como recuperación</button>
       </div>
       <div className="row" style={{marginTop:14,alignItems:"flex-end"}}>
         <div className="col"><Field label="Código de bono regalo"><input value={voucherCode} onChange={e=>setVoucherCode(e.target.value)} placeholder="CANVAS-1234"/></Field></div>
-        <button className="btn-primary" onClick={redeemVoucher}>Canjear y reservar</button>
+        <button className="btn-primary" disabled={!selected} onClick={redeemVoucher}>Canjear y reservar</button>
       </div>
       {msg && <p style={{fontSize:13,marginTop:8}}>{msg}</p>}
     </div>
@@ -664,17 +784,44 @@ function CalendarInfoBanner(){
 function StudentApp({profile,onLogout}){
   const [group,setGroup] = useState(null);
   const [allGroups,setAllGroups] = useState([]);
+  const [extraGroupIds,setExtraGroupIds] = useState([]); // ids de student_groups (para poder borrar)
+  const [extraGroups,setExtraGroups] = useState([]); // los grupos completos
   const [payments,setPayments] = useState([]);
   const [file,setFile] = useState(null);
   const [msg,setMsg] = useState("");
+  const [addingClass,setAddingClass] = useState(false);
+  const [addMsg,setAddMsg] = useState("");
+
+  function loadExtra(all){
+    sb.from("student_groups").select("*").eq("student_id",profile.id).then(({data})=>{
+      const rows = data||[];
+      setExtraGroupIds(rows);
+      setExtraGroups(rows.map(r=>all.find(g=>g.id===r.group_id)).filter(Boolean));
+    });
+  }
 
   useEffect(()=>{
     if(profile.group_id) sb.from("groups").select("*").eq("id",profile.group_id).single().then(({data})=>setGroup(data));
-    sb.from("groups").select("*").then(({data})=>setAllGroups(data||[]));
+    sb.from("groups").select("*").then(({data})=>{ const all=data||[]; setAllGroups(all); loadExtra(all); });
     sb.from("payments").select("*").eq("student_id",profile.id).order("year",{ascending:false}).order("month",{ascending:false}).then(({data})=>setPayments(data||[]));
   },[]);
 
   const thisMonthPayment = payments.find(p=>p.year===CY && p.month===CM);
+  const myGroupIds = [profile.group_id, ...extraGroups.map(g=>g.id)].filter(Boolean);
+  const totalFee = computeTotalFee([profile.fee, ...extraGroups.map(g=>g.fee)]);
+  const hasDiscount = (1+extraGroups.length)>=2;
+
+  async function addClass(g){
+    setAddMsg("");
+    const {error} = await sb.from("student_groups").insert({student_id:profile.id, group_id:g.id});
+    if(error){ setAddMsg(error.message); return; }
+    setAddMsg("¡Clase añadida!");
+    sb.from("groups").select("*").then(({data})=>{ const all=data||[]; setAllGroups(all); loadExtra(all); });
+  }
+  async function removeClass(row){
+    await sb.from("student_groups").delete().eq("id",row.id);
+    sb.from("groups").select("*").then(({data})=>{ const all=data||[]; setAllGroups(all); loadExtra(all); });
+  }
 
   async function upload(){
     if(!file){ setMsg("Elige un archivo primero."); return; }
@@ -684,7 +831,7 @@ function StudentApp({profile,onLogout}){
     if(upErr){ setMsg("Error al subir: "+upErr.message); return; }
     const { error: payErr } = await sb.from("payments").upsert({
       student_id:profile.id, year:CY, month:CM, status:"uploaded", filename:file.name,
-      file_path:path, amount:profile.fee, upload_date:todayISO
+      file_path:path, amount:totalFee, upload_date:todayISO
     }, {onConflict:"student_id,year,month"});
     if(payErr){ setMsg("Error guardando el pago: "+payErr.message); return; }
     setMsg("¡Justificante subido! En cuanto lo validemos verás el estado actualizado.");
@@ -699,12 +846,29 @@ function StudentApp({profile,onLogout}){
         <div className="card" style={{marginBottom:14}}>
           <h2 style={{marginTop:0,color:"var(--azul-oscuro)"}}>¡Hola, {profile.display_name.split(" ")[0]}! 👋</h2>
           {group ? <p>Tu clase: <b>{group.name}</b> — {DNF[group.day-1]} {group.time_start}-{group.time_end} con <b style={{color:classColor(group.name)}}>{group.teacher}</b></p> : <p>Aún no tienes clase asignada — escríbenos y te la asignamos.</p>}
-          {profile.enrollment_fee>0 && !profile.enrollment_fee_paid && <div className="badge badge-warn">Matrícula pendiente: {profile.enrollment_fee}€</div>}
+          {extraGroups.map((g,i)=>(
+            <div key={g.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:6}}>
+              <p style={{margin:0}}>Además: <b>{g.name}</b> — {DNF[g.day-1]} {g.time_start}-{g.time_end} con <b style={{color:classColor(g.name)}}>{g.teacher}</b></p>
+              <button className="btn-ghost" style={{padding:"4px 10px",fontSize:12}} onClick={()=>removeClass(extraGroupIds[i])}>Quitar</button>
+            </div>
+          ))}
+          {(1+extraGroups.length)>=2 && <div className="badge badge-ok" style={{marginTop:8}}>5% de descuento aplicado por estar en {1+extraGroups.length} clases</div>}
+          {profile.enrollment_fee>0 && !profile.enrollment_fee_paid && <div className="badge badge-warn" style={{marginTop:8}}>Matrícula pendiente: {profile.enrollment_fee}€</div>}
+          {!addingClass
+            ? <button className="btn-ghost" style={{marginTop:10}} onClick={()=>setAddingClass(true)}>+ Añadir otra clase</button>
+            : (
+              <div style={{marginTop:10}}>
+                <WeeklyTimetable groups={allGroups.filter(g=>!myGroupIds.includes(g.id))} profiles={[]} onSelect={addClass}/>
+                {addMsg && <p className="ok">{addMsg}</p>}
+                <button className="btn-ghost" style={{marginTop:6}} onClick={()=>setAddingClass(false)}>Cerrar</button>
+              </div>
+            )
+          }
         </div>
 
         <CalendarInfoBanner/>
-        <MySessionsPanel profile={profile} group={group}/>
-        <RecoveryBookingPanel profile={profile} groups={allGroups}/>
+        <MySessionsPanel profile={profile} groups={[group,...extraGroups].filter(Boolean)}/>
+        <RecoveryBookingPanel profile={profile} groups={allGroups} myGroupIds={myGroupIds}/>
 
         <div className="card" style={{marginBottom:14}}>
           <h3 style={{marginTop:0}}>Pago de este mes ({MN[CM]})</h3>
@@ -713,7 +877,7 @@ function StudentApp({profile,onLogout}){
             : thisMonthPayment?.status==="uploaded"
               ? <span className="badge badge-warn">Justificante subido, pendiente de validar</span>
               : <span className="badge badge-bad">Pendiente</span>}
-          <p style={{fontSize:14,marginTop:10}}>Cuota: <b>{profile.fee}€</b>. Transferencia al IBAN: <b>{IBAN}</b> (titular: Laura Sanz).</p>
+          <p style={{fontSize:14,marginTop:10}}>Cuota{hasDiscount?" total (con 5% dto.)":""}: <b>{totalFee}€</b>. Transferencia al IBAN: <b>{IBAN}</b> (titular: Laura Sanz).</p>
           <p style={{fontSize:13,color:"var(--rojo)",marginTop:-4}}>⚠️ Importante: en el <b>concepto</b> de la transferencia pon el nombre del alumno/a (<b>{profile.display_name}</b>), para poder identificar tu pago.</p>
           <input type="file" accept="image/*,.pdf" onChange={e=>setFile(e.target.files[0])}/>
           <button className="btn-primary" style={{marginTop:8}} onClick={upload}>Subir justificante</button>
@@ -737,8 +901,8 @@ function StudentApp({profile,onLogout}){
 /* ============================================================
    SESIÓN: PASAR LISTA
    ============================================================ */
-function SessionModal({group, date, profiles, onClose}){
-  const roster = effectiveRoster(group, profiles);
+function SessionModal({group, date, profiles, extraEnrollments, onClose}){
+  const roster = effectiveRoster(group, profiles, extraEnrollments);
   const [status,setStatus] = useState({});
   const [saving,setSaving] = useState(false);
 
@@ -787,11 +951,13 @@ function TeacherApp({profile,onLogout}){
   const [tab,setTab] = useState("mine");
   const [groups,setGroups] = useState([]);
   const [profiles,setProfiles] = useState([]);
+  const [extraEnrollments,setExtraEnrollments] = useState([]);
   const [session,setSession] = useState(null);
 
   function load(){
     sb.from("groups").select("*").order("day").then(({data})=>setGroups(data||[]));
     sb.from("profiles").select("*").then(({data})=>setProfiles(data||[]));
+    sb.from("student_groups").select("*").then(({data})=>setExtraEnrollments(data||[]));
   }
   useEffect(load,[]);
 
@@ -821,7 +987,7 @@ function TeacherApp({profile,onLogout}){
           todayGroups.map(g=>(
             <div key={g.id} className="card" style={{marginBottom:10,borderLeft:`4px solid ${classColor(g.name)}`}}>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                <div><b>{g.name}</b> · {g.time_start}-{g.time_end} · {effectiveRoster(g,profiles).length}/{capOf(g)} alumnos</div>
+                <div><b>{g.name}</b> · {g.time_start}-{g.time_end} · {effectiveRoster(g,profiles,extraEnrollments).length}/{capOf(g)} alumnos</div>
                 <button className="btn-secondary" onClick={()=>setSession({group:g,date:todayISO})}>Pasar lista hoy</button>
               </div>
             </div>
@@ -829,11 +995,11 @@ function TeacherApp({profile,onLogout}){
         )}
         {tab==="all" && groups.map(g=>(
           <div key={g.id} className="card" style={{marginBottom:10,borderLeft:`4px solid ${classColor(g.name)}`}}>
-            <b>{DNF[g.day-1]}</b> {g.time_start}-{g.time_end} · {g.name} · {g.teacher} · {effectiveRoster(g,profiles).length}/{capOf(g)}
+            <b>{DNF[g.day-1]}</b> {g.time_start}-{g.time_end} · {g.name} · {g.teacher} · {effectiveRoster(g,profiles,extraEnrollments).length}/{capOf(g)}
           </div>
         ))}
       </div>
-      {session && <SessionModal group={session.group} date={session.date} profiles={profiles} onClose={()=>{setSession(null);load();}}/>}
+      {session && <SessionModal group={session.group} date={session.date} profiles={profiles} extraEnrollments={extraEnrollments} onClose={()=>{setSession(null);load();}}/>}
     </div>
   );
 }
@@ -841,15 +1007,15 @@ function TeacherApp({profile,onLogout}){
 /* ============================================================
    VISTA CEO — DASHBOARD
    ============================================================ */
-function CEODashboard({groups,profiles,payments,expenses}){
+function CEODashboard({groups,profiles,payments,expenses,extraEnrollments}){
   const students = profiles.filter(p=>p.role==="student");
-  const totalStudents = groups.reduce((s,g)=>s+effectiveRoster(g,profiles).length,0);
-  const occupancy = groups.length? Math.round(100*groups.reduce((s,g)=>s+Math.min(effectiveRoster(g,profiles).length,capOf(g)),0)/groups.reduce((s,g)=>s+capOf(g),0)) : 0;
+  const totalStudents = groups.reduce((s,g)=>s+effectiveRoster(g,profiles,extraEnrollments).length,0);
+  const occupancy = groups.length? Math.round(100*groups.reduce((s,g)=>s+Math.min(effectiveRoster(g,profiles,extraEnrollments).length,capOf(g)),0)/groups.reduce((s,g)=>s+capOf(g),0)) : 0;
   const validated = payments.filter(p=>p.year===CY&&p.month===CM&&p.status==="validated").reduce((s,p)=>s+(p.amount||0),0);
   const pendingCount = students.filter(s=>!payments.some(p=>p.student_id===s.id&&p.year===CY&&p.month===CM&&p.status!=="pending")).length;
   const monthExpenses = expenses.filter(e=>e.year===CY&&e.month===CM).reduce((s,e)=>s+e.amount,0);
   const birthdaysToday = students.filter(p=>isBirthday(p.birthdate));
-  const lowOccupancy = groups.filter(g=>effectiveRoster(g,profiles).length<3);
+  const lowOccupancy = groups.filter(g=>effectiveRoster(g,profiles,extraEnrollments).length<3);
 
   return (
     <div>
@@ -878,7 +1044,7 @@ function CEODashboard({groups,profiles,payments,expenses}){
 /* ============================================================
    VISTA CEO — GRUPOS
    ============================================================ */
-function GroupsView({groups,profiles,reload}){
+function GroupsView({groups,profiles,extraEnrollments,reload}){
   const [editing,setEditing] = useState(null);
   const [studentsText,setStudentsText] = useState("");
   async function save(g){
@@ -902,7 +1068,7 @@ function GroupsView({groups,profiles,reload}){
           <h4 style={{color:"var(--azul-oscuro)"}}>{dn}</h4>
           {groups.filter(g=>g.day===i+1).map(g=>(
             <div key={g.id} className="card" style={{marginBottom:8,borderLeft:`4px solid ${classColor(g.name)}`,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-              <div>{g.time_start}-{g.time_end} · <b>{g.name}</b> · {g.teacher} {g.level && `(${g.level})`} · {effectiveRoster(g,profiles).length}/{capOf(g)} · {g.fee}€</div>
+              <div>{g.time_start}-{g.time_end} · <b>{g.name}</b> · {g.teacher} {g.level && `(${g.level})`} · {effectiveRoster(g,profiles,extraEnrollments).length}/{capOf(g)} · {g.fee}€</div>
               <button className="btn-ghost" onClick={()=>openEdit(g)}>Editar</button>
             </div>
           ))}
@@ -967,9 +1133,9 @@ function PaymentsView({profiles,payments,reload}){
 /* ============================================================
    VISTA CEO — ESTADÍSTICAS
    ============================================================ */
-function StatsView({groups,profiles,attendance}){
+function StatsView({groups,profiles,attendance,extraEnrollments}){
   const roster = [];
-  groups.forEach(g=>effectiveRoster(g,profiles).forEach(name=>roster.push({name,group:g.name})));
+  groups.forEach(g=>effectiveRoster(g,profiles,extraEnrollments).forEach(name=>roster.push({name,group:g.name})));
   function counts(name){
     const rows = attendance.filter(a=>a.student_name===name);
     return { pr: rows.filter(r=>r.status==="pr").length, ar: rows.filter(r=>r.status==="ar").length, ab: rows.filter(r=>r.status==="ab").length };
@@ -1164,6 +1330,7 @@ function CEOApp({profile,onLogout}){
   const [attendance,setAttendance] = useState([]);
   const [rates,setRates] = useState([]);
   const [tiers,setTiers] = useState([]);
+  const [extraEnrollments,setExtraEnrollments] = useState([]);
 
   function load(){
     sb.from("groups").select("*").order("day").then(({data})=>setGroups(data||[]));
@@ -1173,6 +1340,7 @@ function CEOApp({profile,onLogout}){
     sb.from("attendance").select("*").then(({data})=>setAttendance(data||[]));
     sb.from("teacher_rates").select("*").then(({data})=>setRates(data||[]));
     sb.from("incentive_tiers").select("*").then(({data})=>setTiers(data||[]));
+    sb.from("student_groups").select("*").then(({data})=>setExtraEnrollments(data||[]));
   }
   useEffect(load,[]);
 
@@ -1188,10 +1356,10 @@ function CEOApp({profile,onLogout}){
         <div className="tabs" style={{marginBottom:16}}>
           {tabs.map(([k,l])=><div key={k} className={"tab "+(tab===k?"active":"")} onClick={()=>setTab(k)}>{l}</div>)}
         </div>
-        {tab==="dashboard" && <CEODashboard groups={groups} profiles={profiles} payments={payments} expenses={expenses}/>}
-        {tab==="groups" && <GroupsView groups={groups} profiles={profiles} reload={load}/>}
+        {tab==="dashboard" && <CEODashboard groups={groups} profiles={profiles} payments={payments} expenses={expenses} extraEnrollments={extraEnrollments}/>}
+        {tab==="groups" && <GroupsView groups={groups} profiles={profiles} extraEnrollments={extraEnrollments} reload={load}/>}
         {tab==="payments" && <PaymentsView profiles={profiles} payments={payments} reload={load}/>}
-        {tab==="stats" && <StatsView groups={groups} profiles={profiles} attendance={attendance}/>}
+        {tab==="stats" && <StatsView groups={groups} profiles={profiles} attendance={attendance} extraEnrollments={extraEnrollments}/>}
         {tab==="teacherpay" && <TeacherPayView groups={groups} attendance={attendance} rates={rates} tiers={tiers}/>}
         {tab==="workshops" && <WorkshopsView/>}
         {tab==="vouchers" && <VouchersView/>}
