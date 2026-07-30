@@ -627,17 +627,25 @@ function App(){
   return <StudentApp profile={profile} onLogout={logout}/>;
 }
 
-function MySessionsPanel({profile,groups}){
+function MySessionsPanel({profile,groups,allGroups}){
   const [cancellations,setCancellations] = useState([]);
+  const [bookings,setBookings] = useState([]);
   const [msg,setMsg] = useState("");
 
   const occurrences = useMemo(()=>{
     const list=[];
-    (groups||[]).forEach(g=> nextOccurrences(g.day,4).forEach(date=>list.push({group:g,date})));
+    (groups||[]).forEach(g=> nextOccurrences(g.day,4).forEach(date=>list.push({group:g,date,type:"regular"})));
+    (bookings||[]).forEach(b=>{
+      const g = (allGroups||[]).find(gg=>gg.id===b.group_id);
+      if(g) list.push({group:g,date:b.session_date,type:b.booking_type}); // "recovery" | "voucher"
+    });
     return list.sort((a,b)=> sessionDateTime(a.date,a.group.time_start) - sessionDateTime(b.date,b.group.time_start));
-  },[groups]);
+  },[groups,bookings,allGroups]);
 
-  function load(){ sb.from("session_cancellations").select("*").eq("student_id",profile.id).then(({data})=>setCancellations(data||[])); }
+  function load(){
+    sb.from("session_cancellations").select("*").eq("student_id",profile.id).then(({data})=>setCancellations(data||[]));
+    sb.from("session_bookings").select("*").eq("student_id",profile.id).is("cancelled_at",null).then(({data})=>setBookings(data||[]));
+  }
   useEffect(load,[(groups||[]).map(g=>g.id).join(",")]);
 
   async function cancelSession(group,date){
@@ -652,14 +660,19 @@ function MySessionsPanel({profile,groups}){
   return (
     <div className="card" style={{marginBottom:14}}>
       <h3 style={{marginTop:0}}>Mis próximas clases</h3>
-      {occurrences.map(({group,date})=>{
-        const cancelled = cancellations.some(c=>c.session_date===date && c.group_id===group.id);
+      {occurrences.map(({group,date,type})=>{
+        const cancelled = type==="regular" && cancellations.some(c=>c.session_date===date && c.group_id===group.id);
         const hrs = hoursUntil(date, group.time_start);
-        const canCancel = !cancelled && hrs>=5;
+        const canCancel = type==="regular" && !cancelled && hrs>=5;
         return (
-          <div key={group.id+"::"+date} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 0",borderBottom:"1px solid #EEF2F8"}}>
-            <span>{group.name} · {date} · {group.time_start}-{group.time_end}{cancelled && <span className="badge badge-warn" style={{marginLeft:8}}>Baja registrada</span>}</span>
-            {!cancelled && (
+          <div key={group.id+"::"+date+"::"+type} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 0",borderBottom:"1px solid #EEF2F8"}}>
+            <span>
+              {group.name} · {date} · {group.time_start}-{group.time_end}
+              {cancelled && <span className="badge badge-warn" style={{marginLeft:8}}>Baja registrada</span>}
+              {type==="recovery" && <span className="badge badge-ok" style={{marginLeft:8}}>Clase de recuperación</span>}
+              {type==="voucher" && <span className="badge badge-ok" style={{marginLeft:8}}>Bono canjeado</span>}
+            </span>
+            {type==="regular" && !cancelled && (
               <button className="btn-ghost" disabled={!canCancel} onClick={()=>cancelSession(group,date)} title={!canCancel?"Ya quedan menos de 5 horas":""}>
                 Darme de baja
               </button>
@@ -752,7 +765,8 @@ function RecoveryBookingPanel({profile,groups,myGroupIds}){
     setMsg("");
     if(!selectedInfo){ setMsg("Elige una sesión del calendario."); return; }
     const {error} = await sb.from("session_bookings").insert({student_id:profile.id, group_id:selectedInfo.group.id, session_date:selectedInfo.date, booking_type:"recovery"});
-    if(error) setMsg(error.message); else { setMsg("¡Reservado! Nos vemos en esa clase."); load(); }
+    if(error) setMsg("❌ "+error.message);
+    else { setMsg(`✅ ¡Reservado! Tu clase de recuperación en "${selectedInfo.group.name}" el ${selectedInfo.date} ya aparece en "Mis próximas clases".`); setSelected(""); load(); }
   }
 
   async function redeemVoucher(){
@@ -826,7 +840,7 @@ function RecoveryBookingPanel({profile,groups,myGroupIds}){
           <button className="btn-primary" disabled={!selectedInfo} onClick={redeemVoucher}>Canjear y reservar</button>
         </div>
       </Field>
-      {msg && <p style={{fontSize:13,marginTop:8}}>{msg}</p>}
+      {msg && <div style={{marginTop:10,padding:"10px 12px",borderRadius:10,fontSize:13,fontWeight:600,background: msg.startsWith("❌")?"#FCE7E7":"#E4F7EC",color: msg.startsWith("❌")?"var(--rojo)":"var(--verde)"}}>{msg}</div>}
     </div>
   );
 }
@@ -951,7 +965,7 @@ function StudentApp({profile,onLogout}){
         </div>
 
         <CalendarInfoBanner/>
-        <MySessionsPanel profile={profile} groups={[group,...extraGroups].filter(Boolean)}/>
+        <MySessionsPanel profile={profile} groups={[group,...extraGroups].filter(Boolean)} allGroups={allGroups}/>
         <RecoveryBookingPanel profile={profile} groups={allGroups} myGroupIds={myGroupIds}/>
 
         <div className="card" style={{marginBottom:14}}>
@@ -1060,6 +1074,7 @@ function TeacherApp({profile,onLogout}){
   const [profiles,setProfiles] = useState([]);
   const [extraEnrollments,setExtraEnrollments] = useState([]);
   const [session,setSession] = useState(null);
+  const [selectedDate,setSelectedDate] = useState(todayISO<COURSE_START ? COURSE_START : todayISO);
 
   function load(){
     sb.from("groups").select("*").order("day").then(({data})=>setGroups(data||[]));
@@ -1069,8 +1084,14 @@ function TeacherApp({profile,onLogout}){
   useEffect(load,[]);
 
   const myGroups = groups.filter(g=>g.teacher===profile.teacher_name);
-  const todayDow = ((NOW.getDay()+6)%7)+1; // 1=Lunes
-  const todayGroups = myGroups.filter(g=>g.day===todayDow);
+  const selectedDow = ((new Date(selectedDate+"T00:00:00").getDay()+6)%7)+1; // 1=Lunes
+  const selectedDayGroups = myGroups.filter(g=>g.day===selectedDow);
+
+  function shiftDate(days){
+    const d = new Date(selectedDate+"T00:00:00");
+    d.setDate(d.getDate()+days);
+    setSelectedDate(toLocalISO(d));
+  }
 
   const birthdaysToday = profiles.filter(p=>p.role==="student" && isBirthday(p.birthdate));
 
@@ -1086,19 +1107,29 @@ function TeacherApp({profile,onLogout}){
           </div>
         )}
         <div className="tabs" style={{marginBottom:14}}>
-          <div className={"tab "+(tab==="mine"?"active":"")} onClick={()=>setTab("mine")}>Mis clases hoy</div>
+          <div className={"tab "+(tab==="mine"?"active":"")} onClick={()=>setTab("mine")}>Mis clases por día</div>
           <div className={"tab "+(tab==="all"?"active":"")} onClick={()=>setTab("all")}>Todas las clases</div>
         </div>
         {tab==="mine" && (
-          todayGroups.length===0 ? <div className="empty">Hoy no tienes clases 🎨</div> :
-          todayGroups.map(g=>(
-            <div key={g.id} className="card" style={{marginBottom:10,borderLeft:`4px solid ${classColor(g.name)}`}}>
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                <div><b>{g.name}</b> · {g.time_start}-{g.time_end} · {effectiveRoster(g,profiles,extraEnrollments).length}/{capOf(g)} alumnos</div>
-                <button className="btn-secondary" onClick={()=>setSession({group:g,date:todayISO})}>Pasar lista hoy</button>
+          <>
+            <div className="card" style={{marginBottom:14,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+              <button className="btn-ghost" onClick={()=>shiftDate(-1)}>← Día anterior</button>
+              <div style={{textAlign:"center"}}>
+                <div style={{fontWeight:700,color:"var(--azul-oscuro)"}}>{DNF[selectedDow-1]}</div>
+                <input type="date" value={selectedDate} onChange={e=>setSelectedDate(e.target.value)} style={{border:"none",textAlign:"center",fontSize:13,color:"var(--gris)"}}/>
+              </div>
+              <button className="btn-ghost" onClick={()=>shiftDate(1)}>Día siguiente →</button>
+            </div>
+            {selectedDayGroups.length===0 ? <div className="empty">No tienes clases ese día 🎨</div> :
+            selectedDayGroups.map(g=>(
+              <div key={g.id} className="card" style={{marginBottom:10,borderLeft:`4px solid ${classColor(g.name)}`}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                  <div><b>{g.name}</b> · {g.time_start}-{g.time_end} · {effectiveRoster(g,profiles,extraEnrollments).length}/{capOf(g)} alumnos</div>
+                <button className="btn-secondary" onClick={()=>setSession({group:g,date:selectedDate})}>Pasar lista</button>
               </div>
             </div>
-          ))
+          ))}
+          </>
         )}
         {tab==="all" && groups.map(g=>(
           <div key={g.id} className="card" style={{marginBottom:10,borderLeft:`4px solid ${classColor(g.name)}`}}>
