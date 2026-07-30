@@ -248,6 +248,30 @@ function BirthdayBanner({name}){
 function Field({label,children}){
   return <div style={{marginBottom:12}}><label style={{display:"block",fontSize:13,fontWeight:700,color:"var(--gris)",marginBottom:5}}>{label}</label>{children}</div>;
 }
+function DateInputES({value,onChange}){
+  // value/onChange trabajan en formato ISO (YYYY-MM-DD) por dentro, pero se elige en orden día/mes/año
+  const [y,m,d] = value ? value.split("-") : ["","",""];
+  const years = useMemo(()=>{ const arr=[]; for(let yr=NOW.getFullYear(); yr>=NOW.getFullYear()-90; yr--) arr.push(yr); return arr; },[]);
+  function upd(nd,nm,ny){
+    if(nd&&nm&&ny) onChange(`${ny}-${nm}-${nd}`);
+  }
+  return (
+    <div className="row" style={{gap:8}}>
+      <select style={{flex:1}} value={d||""} onChange={e=>upd(e.target.value,m,y)}>
+        <option value="">Día</option>
+        {Array.from({length:31},(_,i)=>String(i+1).padStart(2,"0")).map(dd=><option key={dd} value={dd}>{dd}</option>)}
+      </select>
+      <select style={{flex:1.3}} value={m||""} onChange={e=>upd(d,e.target.value,y)}>
+        <option value="">Mes</option>
+        {MN.slice(1).map((name,i)=><option key={name} value={String(i+1).padStart(2,"0")}>{name}</option>)}
+      </select>
+      <select style={{flex:1}} value={y||""} onChange={e=>upd(d,m,e.target.value)}>
+        <option value="">Año</option>
+        {years.map(yr=><option key={yr} value={yr}>{yr}</option>)}
+      </select>
+    </div>
+  );
+}
 
 function WeeklyTimetable({groups, profiles, onSelect, selectedId}){
   const scrollRef = useRef(null);
@@ -491,7 +515,7 @@ function RegisterForm({onBack}){
             <div className="col"><Field label="Elige una contraseña"><input type="password" required minLength={6} value={f.password} onChange={e=>upd("password",e.target.value)}/></Field></div>
             <div className="col"><Field label="Repite la contraseña"><input type="password" required value={f.password2} onChange={e=>upd("password2",e.target.value)}/></Field></div>
           </div>
-          <Field label="Fecha de nacimiento"><input type="date" required value={f.birthdate} onChange={e=>upd("birthdate",e.target.value)}/></Field>
+          <Field label="Fecha de nacimiento"><DateInputES value={f.birthdate} onChange={v=>upd("birthdate",v)}/></Field>
           {err && <div className="err">{err}</div>}
           <button className="btn-primary" style={{width:"100%"}} disabled={loading}>{loading?"Creando cuenta…":"Siguiente →"}</button>
         </form>
@@ -611,6 +635,7 @@ function MySessionsPanel({profile,groups}){
   useEffect(load,[(groups||[]).map(g=>g.id).join(",")]);
 
   async function cancelSession(group,date){
+    if(!window.confirm(`¿Seguro que quieres darte de baja de "${group.name}" el ${date}? Podrás recuperarla en otro hueco.`)) return;
     setMsg("");
     const {error} = await sb.from("session_cancellations").insert({student_id:profile.id, group_id:group.id, session_date:date});
     if(error) setMsg(error.message);
@@ -648,6 +673,7 @@ function RecoveryBookingPanel({profile,groups,myGroupIds}){
   const [allBookings,setAllBookings] = useState([]);
   const [voucherCode,setVoucherCode] = useState("");
   const [msg,setMsg] = useState("");
+  const [weekOffset,setWeekOffset] = useState(0);
 
   function load(){
     sb.from("session_cancellations").select("*").eq("student_id",profile.id).then(({data})=>setCancellations(data||[]));
@@ -657,13 +683,23 @@ function RecoveryBookingPanel({profile,groups,myGroupIds}){
   }
   useEffect(load,[]);
 
-  const thisMonthCancellations = cancellations.filter(c=>{const d=new Date(c.session_date+"T00:00:00");return d.getFullYear()===CY&&d.getMonth()+1===CM;}).length;
-  const thisMonthRecoveries = bookings.filter(b=>{
-    if(b.booking_type!=="recovery") return false;
-    const d = new Date(b.session_date+"T00:00:00");
-    return d.getFullYear()===CY && d.getMonth()+1===CM;
-  }).length;
-  const recoveryCredits = Math.max(0, thisMonthCancellations - thisMonthRecoveries);
+  // Créditos: se cuentan por el MES DE LA CLASE cancelada (no por el mes de hoy — si cancelas
+  // una clase de septiembre, el crédito es "de septiembre", da igual en qué mes estemos ahora).
+  function creditsForMonth(y,m){
+    const cancels = cancellations.filter(c=>{const d=new Date(c.session_date+"T00:00:00");return d.getFullYear()===y&&d.getMonth()+1===m;}).length;
+    const recs = bookings.filter(b=>{
+      if(b.booking_type!=="recovery") return false;
+      const d = new Date(b.session_date+"T00:00:00");
+      return d.getFullYear()===y && d.getMonth()+1===m;
+    }).length;
+    return Math.max(0, cancels-recs);
+  }
+  const totalCredits = useMemo(()=>{
+    const months = new Set(cancellations.map(c=>c.session_date.slice(0,7)));
+    let total=0;
+    months.forEach(ym=>{ const [y,m]=ym.split("-").map(Number); total += creditsForMonth(y,m); });
+    return total;
+  },[cancellations,bookings]);
 
   // Huecos reales de una sesión concreta: aforo de la clase - matriculados + bajas ese día - reservas ya hechas ese día
   function spotsFor(g, date){
@@ -672,72 +708,99 @@ function RecoveryBookingPanel({profile,groups,myGroupIds}){
     return capOf(g) - (g.current_count||0) + cancelsThatDay - bookingsThatDay;
   }
 
-  const upcomingSessions = useMemo(()=>{
-    const list=[];
-    groups.forEach(g=>{
-      if((myGroupIds||[]).includes(g.id)) return;
-      nextOccurrences(g.day,3).forEach(date=> list.push({group:g,date}));
-    });
-    return list.filter(s=>hoursUntil(s.date,s.group.time_start)>=3 && spotsFor(s.group,s.date)>0)
-                .sort((a,b)=> sessionDateTime(a.date,a.group.time_start) - sessionDateTime(b.date,b.group.time_start));
-  },[groups,allCancellations,allBookings]);
+  // Semana Lunes-Viernes que corresponde al weekOffset (0 = esta semana o el inicio de curso si aún no ha empezado)
+  const weekDates = useMemo(()=>{
+    const base = todayISO < COURSE_START ? new Date(COURSE_START+"T00:00:00") : new Date(NOW);
+    base.setHours(0,0,0,0);
+    const dow = ((base.getDay()+6)%7); // 0=lunes
+    const monday = new Date(base); monday.setDate(base.getDate() - dow + weekOffset*7);
+    return Array.from({length:5},(_,i)=>{ const d=new Date(monday); d.setDate(monday.getDate()+i); return d.toISOString().split("T")[0]; });
+  },[weekOffset]);
 
-  const byDate = useMemo(()=>{
+  const sessionsByDate = useMemo(()=>{
     const m = {};
-    upcomingSessions.forEach(s=>{ (m[s.date]=m[s.date]||[]).push(s); });
-    return Object.entries(m).sort((a,b)=>a[0].localeCompare(b[0]));
-  },[upcomingSessions]);
+    weekDates.forEach((date,i)=>{
+      const dow = i+1; // 1=lunes..5=viernes
+      if(!isSchoolDay(date)) return;
+      groups.forEach(g=>{
+        if((myGroupIds||[]).includes(g.id)) return;
+        if(g.day!==dow) return;
+        if(hoursUntil(date,g.time_start)<3) return;
+        if(spotsFor(g,date)<=0) return;
+        (m[date]=m[date]||[]).push(g);
+      });
+    });
+    return m;
+  },[weekDates,groups,allCancellations,allBookings,myGroupIds]);
 
   const [selected,setSelected] = useState("");
+  const selectedInfo = useMemo(()=>{
+    if(!selected) return null;
+    const [gid,date] = selected.split("::");
+    const g = groups.find(gg=>String(gg.id)===gid);
+    return g ? {group:g,date} : null;
+  },[selected,groups]);
+  const creditsForSelectedMonth = selectedInfo ? (()=>{ const d=new Date(selectedInfo.date+"T00:00:00"); return creditsForMonth(d.getFullYear(),d.getMonth()+1); })() : 0;
 
   async function bookRecovery(){
     setMsg("");
-    if(!selected){ setMsg("Elige una sesión del calendario."); return; }
-    const s = upcomingSessions.find(u=>u.group.id+"::"+u.date===selected);
-    const {error} = await sb.from("session_bookings").insert({student_id:profile.id, group_id:s.group.id, session_date:s.date, booking_type:"recovery"});
+    if(!selectedInfo){ setMsg("Elige una sesión del calendario."); return; }
+    const {error} = await sb.from("session_bookings").insert({student_id:profile.id, group_id:selectedInfo.group.id, session_date:selectedInfo.date, booking_type:"recovery"});
     if(error) setMsg(error.message); else { setMsg("¡Reservado! Nos vemos en esa clase."); load(); }
   }
 
   async function redeemVoucher(){
     setMsg("");
-    if(!selected){ setMsg("Elige una sesión del calendario."); return; }
+    if(!selectedInfo){ setMsg("Elige una sesión del calendario."); return; }
     const {data:v} = await sb.from("gift_vouchers").select("*").eq("code",voucherCode.trim()).eq("paid",true).eq("redeemed",false).maybeSingle();
     if(!v){ setMsg("Ese código de bono no es válido o ya se ha canjeado."); return; }
-    const s = upcomingSessions.find(u=>u.group.id+"::"+u.date===selected);
-    const {error} = await sb.from("session_bookings").insert({student_id:profile.id, group_id:s.group.id, session_date:s.date, booking_type:"voucher", voucher_id:v.id});
+    const {error} = await sb.from("session_bookings").insert({student_id:profile.id, group_id:selectedInfo.group.id, session_date:selectedInfo.date, booking_type:"voucher", voucher_id:v.id});
     if(error){ setMsg(error.message); return; }
     await sb.from("gift_vouchers").update({redeemed:true, redeemed_by:profile.display_name, redeemed_at:todayISO}).eq("id",v.id);
     setMsg("¡Bono canjeado y clase reservada!"); setVoucherCode(""); load();
   }
 
+  const firstDate = new Date(weekDates[0]+"T00:00:00");
+  const lastDate = new Date(weekDates[4]+"T00:00:00");
+
   return (
     <div className="card" style={{marginBottom:14}}>
       <h3 style={{marginTop:0}}>Recuperar una clase o canjear un bono</h3>
-      <p style={{fontSize:13,color:"var(--gris)"}}>Créditos de recuperación disponibles este mes: <b>{recoveryCredits}</b>. Puedes reservar hasta 3 horas antes de la sesión.</p>
+      <p style={{fontSize:13,color:"var(--gris)"}}>Créditos de recuperación disponibles: <b>{totalCredits}</b>. Puedes reservar hasta 3 horas antes de la sesión.</p>
 
-      {byDate.length===0 && <div className="empty">No hay huecos disponibles en los próximos días.</div>}
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+        <button className="btn-ghost" style={{padding:"6px 12px"}} onClick={()=>setWeekOffset(w=>Math.max(0,w-1))} disabled={weekOffset===0}>← Semana anterior</button>
+        <div style={{fontWeight:700,color:"var(--azul-oscuro)",fontSize:13}}>
+          {firstDate.getDate()}/{firstDate.getMonth()+1} – {lastDate.getDate()}/{lastDate.getMonth()+1}
+        </div>
+        <button className="btn-ghost" style={{padding:"6px 12px"}} onClick={()=>setWeekOffset(w=>w+1)}>Semana siguiente →</button>
+      </div>
 
-      <div style={{display:"flex",gap:10,overflowX:"auto",paddingBottom:6}}>
-        {byDate.map(([date,sessionsThatDay])=>{
+      <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:8}}>
+        {weekDates.map((date,i)=>{
           const d = new Date(date+"T00:00:00");
+          const closed = !isSchoolDay(date);
+          const sessionsThatDay = sessionsByDate[date]||[];
           return (
-            <div key={date} style={{minWidth:150,flexShrink:0}}>
+            <div key={date}>
               <div style={{textAlign:"center",fontWeight:700,fontSize:12,color:"var(--azul-oscuro)",marginBottom:6,borderBottom:"2px solid var(--azul-claro)",paddingBottom:4}}>
-                {DNF[((d.getDay()+6)%7)]} {d.getDate()}/{d.getMonth()+1}
+                {DNF[i]}<br/>{d.getDate()}/{d.getMonth()+1}
               </div>
-              {sessionsThatDay.map(s=>{
-                const key = s.group.id+"::"+s.date;
+              {closed && <div style={{fontSize:11,color:"var(--gris)",textAlign:"center"}}>Sin clase</div>}
+              {!closed && sessionsThatDay.length===0 && <div style={{fontSize:11,color:"var(--gris)",textAlign:"center"}}>—</div>}
+              {sessionsThatDay.map(g=>{
+                const key = g.id+"::"+date;
                 const sel = selected===key;
-                const spots = spotsFor(s.group,s.date);
+                const spots = spotsFor(g,date);
                 return (
                   <div key={key} onClick={()=>setSelected(key)} style={{
                     cursor:"pointer", marginBottom:6, borderRadius:10, padding:"6px 8px",
                     background: sel?"#FFF3D6":"#fff",
-                    border:`2px solid ${sel?"var(--mostaza)":classColor(s.group.name)}`,
+                    border:`2px solid ${sel?"var(--mostaza)":classColor(g.name)}`,
                     boxShadow: sel?"0 0 0 3px rgba(233,168,0,0.25)":"none"
                   }}>
-                    <div style={{fontWeight:700,fontSize:12}}>{s.group.name}</div>
-                    <div style={{fontSize:11,color:classColor(s.group.name)}}>{s.group.teacher} · {s.group.time_start}</div>
+                    <div style={{fontWeight:700,fontSize:12}}>{g.name}</div>
+                    <div style={{fontSize:11,color:classColor(g.name)}}>{g.teacher} · {g.time_start}</div>
                     <div style={{fontSize:11,color:"var(--gris)"}}>{spots} hueco{spots!==1?"s":""}</div>
                   </div>
                 );
@@ -748,12 +811,15 @@ function RecoveryBookingPanel({profile,groups,myGroupIds}){
       </div>
 
       <div className="row" style={{marginTop:10}}>
-        <button className="btn-secondary" disabled={recoveryCredits<=0 || !selected} onClick={bookRecovery}>Reservar como recuperación</button>
+        <button className="btn-secondary" disabled={creditsForSelectedMonth<=0 || !selectedInfo} onClick={bookRecovery}>Reservar como recuperación</button>
       </div>
-      <div className="row" style={{marginTop:14,alignItems:"flex-end"}}>
-        <div className="col"><Field label="Código de bono regalo"><input value={voucherCode} onChange={e=>setVoucherCode(e.target.value)} placeholder="CANVAS-1234"/></Field></div>
-        <button className="btn-primary" disabled={!selected} onClick={redeemVoucher}>Canjear y reservar</button>
-      </div>
+      {selectedInfo && creditsForSelectedMonth<=0 && <p style={{fontSize:12,color:"var(--rojo)"}}>No te queda ningún crédito de recuperación para el mes de esa sesión.</p>}
+      <Field label="Código de bono regalo">
+        <div className="row" style={{gap:8}}>
+          <input style={{flex:1}} value={voucherCode} onChange={e=>setVoucherCode(e.target.value)} placeholder="CANVAS-1234"/>
+          <button className="btn-primary" disabled={!selectedInfo} onClick={redeemVoucher}>Canjear y reservar</button>
+        </div>
+      </Field>
       {msg && <p style={{fontSize:13,marginTop:8}}>{msg}</p>}
     </div>
   );
@@ -790,6 +856,7 @@ function StudentApp({profile,onLogout}){
   const [file,setFile] = useState(null);
   const [msg,setMsg] = useState("");
   const [addingClass,setAddingClass] = useState(false);
+  const [newGroupChoice,setNewGroupChoice] = useState(null);
   const [addMsg,setAddMsg] = useState("");
 
   function loadExtra(all){
@@ -818,7 +885,13 @@ function StudentApp({profile,onLogout}){
     setAddMsg("¡Clase añadida!");
     sb.from("groups").select("*").then(({data})=>{ const all=data||[]; setAllGroups(all); loadExtra(all); });
   }
-  async function removeClass(row){
+  async function confirmAddClass(){
+    if(!newGroupChoice) return;
+    await addClass(newGroupChoice);
+    setAddingClass(false); setNewGroupChoice(null);
+  }
+  async function removeClass(row,groupName){
+    if(!window.confirm(`¿Seguro que quieres darte de baja de "${groupName}"? Perderás tu plaza en esa clase.`)) return;
     await sb.from("student_groups").delete().eq("id",row.id);
     sb.from("groups").select("*").then(({data})=>{ const all=data||[]; setAllGroups(all); loadExtra(all); });
   }
@@ -849,7 +922,7 @@ function StudentApp({profile,onLogout}){
           {extraGroups.map((g,i)=>(
             <div key={g.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:6}}>
               <p style={{margin:0}}>Además: <b>{g.name}</b> — {DNF[g.day-1]} {g.time_start}-{g.time_end} con <b style={{color:classColor(g.name)}}>{g.teacher}</b></p>
-              <button className="btn-ghost" style={{padding:"4px 10px",fontSize:12}} onClick={()=>removeClass(extraGroupIds[i])}>Quitar</button>
+              <button className="btn-ghost" style={{padding:"4px 10px",fontSize:12}} onClick={()=>removeClass(extraGroupIds[i],g.name)}>Quitar</button>
             </div>
           ))}
           {(1+extraGroups.length)>=2 && <div className="badge badge-ok" style={{marginTop:8}}>5% de descuento aplicado por estar en {1+extraGroups.length} clases</div>}
@@ -857,10 +930,15 @@ function StudentApp({profile,onLogout}){
           {!addingClass
             ? <button className="btn-ghost" style={{marginTop:10}} onClick={()=>setAddingClass(true)}>+ Añadir otra clase</button>
             : (
-              <div style={{marginTop:10}}>
-                <WeeklyTimetable groups={allGroups.filter(g=>!myGroupIds.includes(g.id))} profiles={[]} onSelect={addClass}/>
+              <div style={{marginTop:10,background:"var(--fondo)",border:"2px solid var(--azul-claro)",borderRadius:12,padding:12}}>
+                <div style={{fontWeight:700,color:"var(--azul-oscuro)",marginBottom:8}}>📅 Estás ampliando tus clases — selecciona en qué grupo quieres apuntarte</div>
+                <WeeklyTimetable groups={allGroups.filter(g=>!myGroupIds.includes(g.id))} profiles={[]} onSelect={setNewGroupChoice} selectedId={newGroupChoice?.id}/>
+                {newGroupChoice && <div className="ok" style={{marginTop:6}}>Has elegido: {newGroupChoice.name} · {DNF[newGroupChoice.day-1]} {newGroupChoice.time_start}-{newGroupChoice.time_end}</div>}
                 {addMsg && <p className="ok">{addMsg}</p>}
-                <button className="btn-ghost" style={{marginTop:6}} onClick={()=>setAddingClass(false)}>Cerrar</button>
+                <div className="row" style={{marginTop:10}}>
+                  <button className="btn-ghost" onClick={()=>{setAddingClass(false); setNewGroupChoice(null); setAddMsg("");}}>Cancelar</button>
+                  <button className="btn-primary" disabled={!newGroupChoice} onClick={confirmAddClass}>Inscribirme</button>
+                </div>
               </div>
             )
           }
@@ -872,6 +950,11 @@ function StudentApp({profile,onLogout}){
 
         <div className="card" style={{marginBottom:14}}>
           <h3 style={{marginTop:0}}>Pago de este mes ({MN[CM]})</h3>
+          {thisMonthPayment?.status==="validated" && (
+            <div style={{background:"#E4F7EC",border:"2px solid var(--verde)",borderRadius:10,padding:12,marginBottom:10}}>
+              ✅ <b>Se ha abonado la cuota de {MN[CM]}.</b> ¡Gracias!
+            </div>
+          )}
           {thisMonthPayment?.status==="validated"
             ? <span className="badge badge-ok">✓ Validado</span>
             : thisMonthPayment?.status==="uploaded"
@@ -904,7 +987,10 @@ function StudentApp({profile,onLogout}){
 function SessionModal({group, date, profiles, extraEnrollments, onClose}){
   const roster = effectiveRoster(group, profiles, extraEnrollments);
   const [status,setStatus] = useState({});
+  const [cash,setCash] = useState({});
   const [saving,setSaving] = useState(false);
+
+  function studentProfileFor(name){ return (profiles||[]).find(p=>p.display_name===name) || null; }
 
   useEffect(()=>{
     sb.from("attendance").select("*").eq("group_id",group.id).eq("session_date",date).then(({data})=>{
@@ -916,6 +1002,17 @@ function SessionModal({group, date, profiles, extraEnrollments, onClose}){
     setSaving(true);
     const rows = roster.map(name=>({group_id:group.id, session_date:date, student_name:name, status:status[name]||"pr"}));
     const {error} = await sb.from("attendance").upsert(rows,{onConflict:"group_id,session_date,student_name"});
+
+    const cashNames = roster.filter(name=>cash[name]);
+    for(const name of cashNames){
+      const p = studentProfileFor(name);
+      if(!p) continue; // alumnos sin cuenta en la app no se pueden marcar (no tienen ficha de pagos)
+      await sb.from("payments").upsert({
+        student_id:p.id, year:CY, month:CM, status:"validated",
+        amount:p.fee, validated_date:todayISO, upload_date:todayISO
+      }, {onConflict:"student_id,year,month"});
+    }
+
     setSaving(false);
     if(!error) onClose();
   }
@@ -924,17 +1021,21 @@ function SessionModal({group, date, profiles, extraEnrollments, onClose}){
     <div className="modal-bg" onClick={onClose}>
       <div className="modal" onClick={e=>e.stopPropagation()}>
         <h3 style={{marginTop:0}}>{group.name} — {date}</h3>
+        <p style={{fontSize:12,color:"var(--gris)",marginTop:-8}}>✓ Asistió · ↩ Recuperable · ✗ No asistió · 💶 Pagó en efectivo hoy</p>
         {roster.length===0 && <div className="empty">No hay alumnos en esta clase todavía.</div>}
-        {roster.map(name=>(
+        {roster.map(name=>{
+          const p = studentProfileFor(name);
+          return (
           <div key={name} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 0",borderBottom:"1px solid #EEF2F8"}}>
             <span>{name}</span>
             <div className="row" style={{gap:6}}>
               <button style={{padding:"6px 10px",background:status[name]==="pr"||!status[name]?"var(--verde)":"#eee",color:status[name]==="pr"||!status[name]?"#fff":"#999"}} onClick={()=>setStatus(s=>({...s,[name]:"pr"}))}>✓</button>
               <button style={{padding:"6px 10px",background:status[name]==="ar"?"var(--mostaza)":"#eee",color:status[name]==="ar"?"#fff":"#999"}} onClick={()=>setStatus(s=>({...s,[name]:"ar"}))}>↩</button>
               <button style={{padding:"6px 10px",background:status[name]==="ab"?"var(--rojo)":"#eee",color:status[name]==="ab"?"#fff":"#999"}} onClick={()=>setStatus(s=>({...s,[name]:"ab"}))}>✗</button>
+              <button disabled={!p} title={!p?"Este alumno no tiene cuenta en la app":""} style={{padding:"6px 10px",background:cash[name]?"var(--azul-oscuro)":"#eee",color:cash[name]?"#fff":"#999",opacity:p?1:0.4}} onClick={()=>setCash(c=>({...c,[name]:!c[name]}))}>💶</button>
             </div>
           </div>
-        ))}
+        );})}
         <div className="row" style={{marginTop:16}}>
           <button className="btn-ghost" onClick={onClose}>Cancelar</button>
           <button className="btn-primary" onClick={save} disabled={saving}>{saving?"Guardando…":"Guardar asistencia"}</button>
