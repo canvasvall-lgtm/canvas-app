@@ -864,6 +864,30 @@ function CalendarInfoBanner(){
   return <div className="card" style={{marginBottom:14,fontSize:13,color:"var(--gris)",borderLeft:"4px solid var(--azul-claro)"}}>📅 {msg}</div>;
 }
 
+function ClassNotesForStudent({groupIds,allGroups}){
+  const [notes,setNotes] = useState([]);
+  useEffect(()=>{
+    if(!groupIds || groupIds.length===0){ setNotes([]); return; }
+    sb.from("class_notes").select("*").in("group_id",groupIds).order("created_at",{ascending:false}).limit(10).then(({data})=>setNotes(data||[]));
+  },[(groupIds||[]).join(",")]);
+
+  if(notes.length===0) return null;
+  return (
+    <div className="card" style={{marginBottom:14}}>
+      <h3 style={{marginTop:0}}>📣 Avisos de tus profesoras</h3>
+      {notes.map(n=>{
+        const g = (allGroups||[]).find(gg=>gg.id===n.group_id);
+        return (
+          <div key={n.id} style={{marginBottom:8,background:"var(--fondo)",borderRadius:8,padding:10}}>
+            <div style={{fontSize:13}}>{n.message}</div>
+            <div style={{fontSize:11,color:"var(--gris)",marginTop:2}}>{g?g.name+" · ":""}{n.teacher_name} · {new Date(n.created_at).toLocaleString("es-ES")}</div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 /* ============================================================
    VISTA ALUMNO
    ============================================================ */
@@ -965,6 +989,7 @@ function StudentApp({profile,onLogout}){
         </div>
 
         <CalendarInfoBanner/>
+        <ClassNotesForStudent groupIds={myGroupIds} allGroups={allGroups}/>
         <MySessionsPanel profile={profile} groups={[group,...extraGroups].filter(Boolean)} allGroups={allGroups}/>
         <RecoveryBookingPanel profile={profile} groups={allGroups} myGroupIds={myGroupIds}/>
 
@@ -1108,7 +1133,7 @@ function TeacherApp({profile,onLogout}){
         )}
         <div className="tabs" style={{marginBottom:14}}>
           <div className={"tab "+(tab==="mine"?"active":"")} onClick={()=>setTab("mine")}>Mis clases por día</div>
-          <div className={"tab "+(tab==="all"?"active":"")} onClick={()=>setTab("all")}>Todas las clases</div>
+          <div className={"tab "+(tab==="all"?"active":"")} onClick={()=>setTab("all")}>Todas mis clases</div>
         </div>
         {tab==="mine" && (
           <>
@@ -1122,22 +1147,68 @@ function TeacherApp({profile,onLogout}){
             </div>
             {selectedDayGroups.length===0 ? <div className="empty">No tienes clases ese día 🎨</div> :
             selectedDayGroups.map(g=>(
-              <div key={g.id} className="card" style={{marginBottom:10,borderLeft:`4px solid ${classColor(g.name)}`}}>
-                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                  <div><b>{g.name}</b> · {g.time_start}-{g.time_end} · {effectiveRoster(g,profiles,extraEnrollments).length}/{capOf(g)} alumnos</div>
-                <button className="btn-secondary" onClick={()=>setSession({group:g,date:selectedDate})}>Pasar lista</button>
-              </div>
-            </div>
-          ))}
+              <TeacherGroupCard key={g.id} group={g} profiles={profiles} extraEnrollments={extraEnrollments}
+                onTakeAttendance={()=>setSession({group:g,date:selectedDate})}/>
+            ))}
           </>
         )}
-        {tab==="all" && groups.map(g=>(
-          <div key={g.id} className="card" style={{marginBottom:10,borderLeft:`4px solid ${classColor(g.name)}`}}>
-            <b>{DNF[g.day-1]}</b> {g.time_start}-{g.time_end} · {g.name} · {g.teacher} · {effectiveRoster(g,profiles,extraEnrollments).length}/{capOf(g)}
-          </div>
+        {tab==="all" && myGroups.map(g=>(
+          <TeacherGroupCard key={g.id} group={g} profiles={profiles} extraEnrollments={extraEnrollments} showDay/>
         ))}
       </div>
       {session && <SessionModal group={session.group} date={session.date} profiles={profiles} extraEnrollments={extraEnrollments} onClose={()=>{setSession(null);load();}}/>}
+    </div>
+  );
+}
+
+function TeacherGroupCard({group:g, profiles, extraEnrollments, onTakeAttendance, showDay}){
+  const [open,setOpen] = useState(false);
+  const [notes,setNotes] = useState([]);
+  const [newNote,setNewNote] = useState("");
+  const [sending,setSending] = useState(false);
+  const roster = effectiveRoster(g, profiles, extraEnrollments);
+
+  function loadNotes(){ sb.from("class_notes").select("*").eq("group_id",g.id).order("created_at",{ascending:false}).then(({data})=>setNotes(data||[])); }
+  useEffect(()=>{ if(open) loadNotes(); },[open]);
+
+  async function sendNote(){
+    if(!newNote.trim()) return;
+    setSending(true);
+    await sb.from("class_notes").insert({group_id:g.id, teacher_name:g.teacher, message:newNote.trim()});
+    setNewNote(""); setSending(false); loadNotes();
+  }
+
+  return (
+    <div className="card" style={{marginBottom:10,borderLeft:`4px solid ${classColor(g.name)}`}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+        <div>
+          {showDay && <b>{DNF[g.day-1]} </b>}
+          <b>{g.name}</b> · {g.time_start}-{g.time_end} · {roster.length}/{capOf(g)} alumnos
+        </div>
+        <div className="row" style={{gap:6}}>
+          <button className="btn-ghost" onClick={()=>setOpen(o=>!o)}>{open?"Cerrar":"Ver alumnos y avisos"}</button>
+          {onTakeAttendance && <button className="btn-secondary" onClick={onTakeAttendance}>Pasar lista</button>}
+        </div>
+      </div>
+      {open && (
+        <div style={{marginTop:12,borderTop:"1px solid #EEF2F8",paddingTop:10}}>
+          <div style={{fontWeight:700,fontSize:13,marginBottom:6}}>Alumnos inscritos</div>
+          {roster.length===0 && <div style={{fontSize:13,color:"var(--gris)"}}>Todavía no hay alumnos en esta clase.</div>}
+          {roster.map(name=><div key={name} style={{fontSize:13,padding:"3px 0"}}>{name}</div>)}
+
+          <div style={{fontWeight:700,fontSize:13,marginTop:14,marginBottom:6}}>Avisos a la clase</div>
+          <div className="row" style={{gap:8}}>
+            <input style={{flex:1}} value={newNote} onChange={e=>setNewNote(e.target.value)} placeholder="Ej: traed bloc de dibujo el lunes"/>
+            <button className="btn-primary" disabled={sending} onClick={sendNote}>Enviar</button>
+          </div>
+          {notes.map(n=>(
+            <div key={n.id} style={{fontSize:13,marginTop:8,background:"var(--fondo)",borderRadius:8,padding:8}}>
+              {n.message}
+              <div style={{fontSize:11,color:"var(--gris)",marginTop:2}}>{new Date(n.created_at).toLocaleString("es-ES")}</div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
