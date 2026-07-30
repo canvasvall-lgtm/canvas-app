@@ -159,7 +159,13 @@ async function sendWelcomeEmail(toEmail, toName){
 
 const NOW = new Date();
 const CY = NOW.getFullYear(), CM = NOW.getMonth()+1;
-const todayISO = NOW.toISOString().split("T")[0];
+function toLocalISO(d){
+  // Fecha en formato YYYY-MM-DD usando la hora LOCAL del dispositivo, sin pasar por UTC
+  // (usar toISOString() aquí desplazaría el día en zonas horarias por delante de UTC, como España)
+  const y=d.getFullYear(), m=String(d.getMonth()+1).padStart(2,"0"), day=String(d.getDate()).padStart(2,"0");
+  return `${y}-${m}-${day}`;
+}
+const todayISO = toLocalISO(NOW);
 const isAugustNow = CM === 8;
 
 function isBirthday(dateStr){
@@ -190,7 +196,7 @@ function nextOccurrences(dayOfWeek, count=3){
   let d = new Date(startFrom); d.setHours(0,0,0,0);
   for(let i=0;i<200 && dates.length<count;i++){
     const dow = ((d.getDay()+6)%7)+1;
-    const ds = d.toISOString().split("T")[0];
+    const ds = toLocalISO(d);
     if(dow===dayOfWeek && isSchoolDay(ds)) dates.push(ds);
     d.setDate(d.getDate()+1);
   }
@@ -714,7 +720,7 @@ function RecoveryBookingPanel({profile,groups,myGroupIds}){
     base.setHours(0,0,0,0);
     const dow = ((base.getDay()+6)%7); // 0=lunes
     const monday = new Date(base); monday.setDate(base.getDate() - dow + weekOffset*7);
-    return Array.from({length:5},(_,i)=>{ const d=new Date(monday); d.setDate(monday.getDate()+i); return d.toISOString().split("T")[0]; });
+    return Array.from({length:5},(_,i)=>{ const d=new Date(monday); d.setDate(monday.getDate()+i); return toLocalISO(d); });
   },[weekOffset]);
 
   const sessionsByDate = useMemo(()=>{
