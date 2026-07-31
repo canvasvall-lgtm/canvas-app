@@ -137,7 +137,7 @@ const CONDITIONS_TEXT = [
   ["Exposición de fin de curso", "Organizamos una exposición donde podéis mostrar vuestro trabajo. Participar es totalmente voluntario."],
   ["Comunicación", "Os avisaremos de horarios, eventos y novedades por WhatsApp, email o teléfono."]
 ];
-const IBAN = "ES48 1583 0001 1190 0005 3764"; // Revolut Business Pro — titular: Laura Sanz
+const IBAN = "ES48 0182 1605 5802 0164 4508"; // BBVA Cuenta Negocios — titular: Laura Sanz
 
 // EmailJS — rellena estos 3 valores cuando tengas tu cuenta creada (emailjs.com)
 const EMAILJS_PUBLIC_KEY = "u8MI4wxwkid6PEkAM";
@@ -148,12 +148,15 @@ if(EMAILJS_PUBLIC_KEY) emailjs.init(EMAILJS_PUBLIC_KEY);
 async function sendWelcomeEmail(toEmail, toName){
   if(!EMAILJS_PUBLIC_KEY || !EMAILJS_SERVICE_ID || !EMAILJS_TEMPLATE_ID){
     console.warn("EmailJS no está configurado todavía — no se envía email de bienvenida.");
-    return;
+    return {ok:false, reason:"no configurado"};
   }
   try{
-    await emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, { to_email: toEmail, to_name: toName });
+    const res = await emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, { to_email: toEmail, to_name: toName });
+    console.log("EmailJS respuesta:", res);
+    return {ok:true, res};
   }catch(e){
     console.warn("No se pudo enviar el email de bienvenida:", e);
+    return {ok:false, reason: (e && (e.text||e.message)) || JSON.stringify(e)};
   }
 }
 
@@ -417,6 +420,7 @@ function RegisterForm({onBack}){
   const [step,setStep] = useState("account"); // account | details | done
   const [err,setErr]=useState(""); const [loading,setLoading]=useState(false);
   const [uid,setUid] = useState(null);
+  const [emailDebug,setEmailDebug] = useState(null);
   const [f,setF] = useState({
     display_name:"", email:"", password:"", password2:"", group_id:"", birthdate:"", guardian_name:"", guardian_phone:"",
     guardian_email:"", payment_type:"monthly", preferred_payment_method:"transferencia", privacy_consent:false,
@@ -459,7 +463,8 @@ function RegisterForm({onBack}){
     setLoading(false);
     if(profileErr){ setErr("Tu cuenta se creó pero hubo un problema guardando tus datos: "+profileErr.message+". Escríbenos y lo arreglamos."); return; }
 
-    sendWelcomeEmail(f.email.trim(), f.display_name);
+    const emailResult = await sendWelcomeEmail(f.email.trim(), f.display_name);
+    setEmailDebug(emailResult);
     setUid(newUid);
     setStep("details");
   }
@@ -500,6 +505,11 @@ function RegisterForm({onBack}){
         <div style={{fontSize:40}}>🎉</div>
         <h2 style={{color:"var(--azul-oscuro)"}}>¡Ya formas parte de CANVAS!</h2>
         <p style={{color:"var(--gris)"}}>Ya puedes entrar con tu email y la contraseña que has elegido.</p>
+        {emailDebug && (
+          <p style={{fontSize:11,color:emailDebug.ok?"var(--verde)":"var(--rojo)",background:"var(--fondo)",padding:8,borderRadius:8}}>
+            {emailDebug.ok ? "✅ Email de bienvenida enviado correctamente." : `⚠️ Email no enviado: ${emailDebug.reason}`}
+          </p>
+        )}
         <button className="btn-primary" style={{width:"100%",marginTop:10}} onClick={()=>window.location.reload()}>Ir a mi perfil</button>
       </div>
     );
@@ -1093,11 +1103,39 @@ function SessionModal({group, date, profiles, extraEnrollments, onClose}){
 /* ============================================================
    VISTA PROFESORA
    ============================================================ */
+function MyHoursPanel({teacherName,groups,attendance,rates,tiers}){
+  const [year,setYear] = useState(CY);
+  const [month,setMonth] = useState(CM);
+  const byTeacher = useMemo(()=>computeTeacherPay(year,month,{groups,attendance,rates,tiers}),[year,month,groups,attendance,rates,tiers]);
+  const mine = byTeacher[teacherName] || {hours:0,total:0,sessions:0};
+  const rate = rates.find(r=>r.teacher_name===teacherName)?.rate_per_hour;
+
+  return (
+    <div className="card">
+      <h3 style={{marginTop:0}}>Mis horas y pago estimado</h3>
+      <div className="row" style={{marginBottom:10,alignItems:"flex-end"}}>
+        <div className="col"><Field label="Mes"><select value={month} onChange={e=>setMonth(parseInt(e.target.value))}>{MN.slice(1).map((m,i)=><option key={m} value={i+1}>{m}</option>)}</select></Field></div>
+        <div className="col"><Field label="Año"><select value={year} onChange={e=>setYear(parseInt(e.target.value))}>{[CY-1,CY,CY+1].map(y=><option key={y} value={y}>{y}</option>)}</select></Field></div>
+      </div>
+      <p style={{fontSize:13,color:"var(--gris)"}}>Tu tarifa base: <b>{rate!=null?rate+"€/h":"—"}</b>. Incentivo extra si una clase tiene 6 o más alumnos.</p>
+      <div className="row">
+        <div className="col card"><div style={{fontSize:22,fontWeight:800}}>{mine.sessions}</div><div style={{color:"var(--gris)"}}>Sesiones dadas</div></div>
+        <div className="col card"><div style={{fontSize:22,fontWeight:800}}>{mine.hours.toFixed(1)}h</div><div style={{color:"var(--gris)"}}>Horas totales</div></div>
+        <div className="col card"><div style={{fontSize:22,fontWeight:800,color:"var(--verde)"}}>{mine.total.toFixed(2)}€</div><div style={{color:"var(--gris)"}}>Total estimado</div></div>
+      </div>
+      <p style={{fontSize:12,color:"var(--gris)",marginTop:10}}>Este cálculo se basa en las sesiones en las que has pasado lista. Si falta alguna, pásala y el total se actualizará solo.</p>
+    </div>
+  );
+}
+
 function TeacherApp({profile,onLogout}){
   const [tab,setTab] = useState("mine");
   const [groups,setGroups] = useState([]);
   const [profiles,setProfiles] = useState([]);
   const [extraEnrollments,setExtraEnrollments] = useState([]);
+  const [attendance,setAttendance] = useState([]);
+  const [rates,setRates] = useState([]);
+  const [tiers,setTiers] = useState([]);
   const [session,setSession] = useState(null);
   const [selectedDate,setSelectedDate] = useState(todayISO<COURSE_START ? COURSE_START : todayISO);
 
@@ -1105,6 +1143,9 @@ function TeacherApp({profile,onLogout}){
     sb.from("groups").select("*").order("day").then(({data})=>setGroups(data||[]));
     sb.from("profiles").select("*").then(({data})=>setProfiles(data||[]));
     sb.from("student_groups").select("*").then(({data})=>setExtraEnrollments(data||[]));
+    sb.from("attendance").select("*").then(({data})=>setAttendance(data||[]));
+    sb.from("teacher_rates").select("*").then(({data})=>setRates(data||[]));
+    sb.from("incentive_tiers").select("*").then(({data})=>setTiers(data||[]));
   }
   useEffect(load,[]);
 
@@ -1134,6 +1175,7 @@ function TeacherApp({profile,onLogout}){
         <div className="tabs" style={{marginBottom:14}}>
           <div className={"tab "+(tab==="mine"?"active":"")} onClick={()=>setTab("mine")}>Mis clases por día</div>
           <div className={"tab "+(tab==="all"?"active":"")} onClick={()=>setTab("all")}>Todas mis clases</div>
+          <div className={"tab "+(tab==="hours"?"active":"")} onClick={()=>setTab("hours")}>Mis horas</div>
         </div>
         {tab==="mine" && (
           <>
@@ -1155,6 +1197,7 @@ function TeacherApp({profile,onLogout}){
         {tab==="all" && myGroups.map(g=>(
           <TeacherGroupCard key={g.id} group={g} profiles={profiles} extraEnrollments={extraEnrollments} showDay/>
         ))}
+        {tab==="hours" && <MyHoursPanel teacherName={profile.teacher_name} groups={groups} attendance={attendance} rates={rates} tiers={tiers}/>}
       </div>
       {session && <SessionModal group={session.group} date={session.date} profiles={profiles} extraEnrollments={extraEnrollments} onClose={()=>{setSession(null);load();}}/>}
     </div>
@@ -1358,42 +1401,49 @@ function StatsView({groups,profiles,attendance,extraEnrollments}){
 /* ============================================================
    VISTA CEO — PAGO A PROFESORAS (horas + incentivo)
    ============================================================ */
-function TeacherPayView({groups,attendance,rates,tiers}){
-  const sessions = useMemo(()=>{
-    const seen = {};
-    attendance.forEach(a=>{
-      const d = new Date(a.session_date+"T00:00:00");
-      if(d.getFullYear()!==CY || d.getMonth()+1!==CM) return;
-      const key = a.group_id+"::"+a.session_date;
-      seen[key] = true;
-    });
-    return Object.keys(seen).map(k=>{ const [gid,date]=k.split("::"); return {gid:parseInt(gid),date}; });
-  },[attendance]);
-
-  function hoursOf(g){
-    const [h1,m1]=g.time_start.split(":").map(Number), [h2,m2]=g.time_end.split(":").map(Number);
-    return ((h2*60+m2)-(h1*60+m1))/60;
-  }
-  function tierBonus(n){
-    const t = tiers.find(t=>n>=t.min_students && n<=t.max_students);
-    return t? t.bonus_per_hour : 0;
-  }
-
+function hoursOfGroup(g){
+  const [h1,m1]=g.time_start.split(":").map(Number), [h2,m2]=g.time_end.split(":").map(Number);
+  return ((h2*60+m2)-(h1*60+m1))/60;
+}
+function tierBonusFor(n,tiers){
+  const t = tiers.find(t=>n>=t.min_students && n<=t.max_students);
+  return t? t.bonus_per_hour : 0;
+}
+// Calcula, para un año/mes concreto, las sesiones con asistencia y el total a pagar por profesora
+function computeTeacherPay(year,month,{groups,attendance,rates,tiers}){
+  const seen = {};
+  attendance.forEach(a=>{
+    const d = new Date(a.session_date+"T00:00:00");
+    if(d.getFullYear()!==year || d.getMonth()+1!==month) return;
+    seen[a.group_id+"::"+a.session_date] = true;
+  });
+  const sessions = Object.keys(seen).map(k=>{ const [gid,date]=k.split("::"); return {gid:parseInt(gid),date}; });
   const byTeacher = {};
   sessions.forEach(s=>{
     const g = groups.find(gg=>gg.id===s.gid); if(!g) return;
-    const hours = hoursOf(g);
+    const hours = hoursOfGroup(g);
     const rate = rates.find(r=>r.teacher_name===g.teacher)?.rate_per_hour || 0;
-    const bonus = tierBonus(g.current_count||0);
+    const bonus = tierBonusFor(g.current_count||0,tiers);
     byTeacher[g.teacher] = byTeacher[g.teacher] || {hours:0,total:0,sessions:0};
     byTeacher[g.teacher].hours += hours;
     byTeacher[g.teacher].sessions += 1;
     byTeacher[g.teacher].total += hours*(rate+bonus);
   });
+  return byTeacher;
+}
+
+function TeacherPayView({groups,attendance,rates,tiers}){
+  const [year,setYear] = useState(CY);
+  const [month,setMonth] = useState(CM);
+  const byTeacher = useMemo(()=>computeTeacherPay(year,month,{groups,attendance,rates,tiers}),[year,month,groups,attendance,rates,tiers]);
 
   return (
     <div>
-      <p style={{fontSize:13,color:"var(--gris)"}}>Calculado a partir de las sesiones con asistencia registrada en {MN[CM]} {CY}. Tarifa + incentivo según nº de alumnos de cada clase.</p>
+      <div className="row" style={{marginBottom:10,alignItems:"flex-end"}}>
+        <div className="col"><Field label="Mes"><select value={month} onChange={e=>setMonth(parseInt(e.target.value))}>{MN.slice(1).map((m,i)=><option key={m} value={i+1}>{m}</option>)}</select></Field></div>
+        <div className="col"><Field label="Año"><select value={year} onChange={e=>setYear(parseInt(e.target.value))}>{[CY-1,CY,CY+1].map(y=><option key={y} value={y}>{y}</option>)}</select></Field></div>
+      </div>
+      <p style={{fontSize:13,color:"var(--gris)"}}>Calculado a partir de las sesiones con asistencia registrada en {MN[month]} {year}. Tarifa + incentivo según nº de alumnos de cada clase.</p>
       <table><thead><tr><th>Profesora</th><th>Sesiones</th><th>Horas</th><th>Total a pagar</th></tr></thead>
       <tbody>{TEACHERS.map(t=>{const d=byTeacher[t]||{hours:0,total:0,sessions:0};return <tr key={t}><td>{t}</td><td>{d.sessions}</td><td>{d.hours.toFixed(1)}h</td><td><b>{d.total.toFixed(2)}€</b></td></tr>;})}</tbody></table>
     </div>
@@ -1496,89 +1546,4 @@ function VouchersView(){
             <label style={{display:"block",marginBottom:8}}><input type="checkbox" style={{width:"auto"}} checked={editing.paid} onChange={e=>setEditing({...editing,paid:e.target.checked})}/> Pagado</label>
             <label style={{display:"block",marginBottom:8}}><input type="checkbox" style={{width:"auto"}} checked={editing.redeemed} onChange={e=>setEditing({...editing,redeemed:e.target.checked})}/> Canjeado</label>
             <div className="row"><button className="btn-ghost" onClick={()=>setEditing(null)}>Cancelar</button><button className="btn-primary" onClick={()=>save(editing)}>Guardar</button></div>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-/* ============================================================
-   VISTA CEO — GASTOS
-   ============================================================ */
-function ExpensesView({expenses,reload}){
-  const [concept,setConcept] = useState(""); const [amount,setAmount] = useState("");
-  async function add(){
-    if(!concept||!amount) return;
-    await sb.from("expenses").insert({concept,amount:parseFloat(amount),month:CM,year:CY});
-    setConcept(""); setAmount(""); reload();
-  }
-  const monthExpenses = expenses.filter(e=>e.year===CY&&e.month===CM);
-  return (
-    <div>
-      <div className="row" style={{marginBottom:12}}>
-        <div className="col"><input placeholder="Concepto" value={concept} onChange={e=>setConcept(e.target.value)}/></div>
-        <div className="col"><input placeholder="Importe €" type="number" value={amount} onChange={e=>setAmount(e.target.value)}/></div>
-        <button className="btn-primary" onClick={add}>Añadir</button>
-      </div>
-      <table><thead><tr><th>Concepto</th><th>Importe</th></tr></thead>
-      <tbody>{monthExpenses.map(e=><tr key={e.id}><td>{e.concept}</td><td>{e.amount}€</td></tr>)}</tbody></table>
-    </div>
-  );
-}
-
-/* ============================================================
-   VISTA CEO — RAÍZ
-   ============================================================ */
-function CEOApp({profile,onLogout}){
-  const [tab,setTab] = useState("dashboard");
-  const [groups,setGroups] = useState([]);
-  const [profiles,setProfiles] = useState([]);
-  const [payments,setPayments] = useState([]);
-  const [expenses,setExpenses] = useState([]);
-  const [attendance,setAttendance] = useState([]);
-  const [rates,setRates] = useState([]);
-  const [tiers,setTiers] = useState([]);
-  const [extraEnrollments,setExtraEnrollments] = useState([]);
-
-  function load(){
-    sb.from("groups").select("*").order("day").then(({data})=>setGroups(data||[]));
-    sb.from("profiles").select("*").then(({data})=>setProfiles(data||[]));
-    sb.from("payments").select("*").then(({data})=>setPayments(data||[]));
-    sb.from("expenses").select("*").then(({data})=>setExpenses(data||[]));
-    sb.from("attendance").select("*").then(({data})=>setAttendance(data||[]));
-    sb.from("teacher_rates").select("*").then(({data})=>setRates(data||[]));
-    sb.from("incentive_tiers").select("*").then(({data})=>setTiers(data||[]));
-    sb.from("student_groups").select("*").then(({data})=>setExtraEnrollments(data||[]));
-  }
-  useEffect(load,[]);
-
-  const tabs = [
-    ["dashboard","Dashboard"],["groups","Clases"],["payments","Pagos"],["stats","Estadísticas"],
-    ["teacherpay","Pago profesoras"],["workshops","Talleres"],["vouchers","Bonos"],["expenses","Gastos"]
-  ];
-
-  return (
-    <div>
-      <div className="topbar"><Logo size={30} dark={true}/><button className="btn-ghost" onClick={onLogout}>Salir</button></div>
-      <div className="container">
-        <div className="tabs" style={{marginBottom:16}}>
-          {tabs.map(([k,l])=><div key={k} className={"tab "+(tab===k?"active":"")} onClick={()=>setTab(k)}>{l}</div>)}
-        </div>
-        {tab==="dashboard" && <CEODashboard groups={groups} profiles={profiles} payments={payments} expenses={expenses} extraEnrollments={extraEnrollments}/>}
-        {tab==="groups" && <GroupsView groups={groups} profiles={profiles} extraEnrollments={extraEnrollments} reload={load}/>}
-        {tab==="payments" && <PaymentsView profiles={profiles} payments={payments} reload={load}/>}
-        {tab==="stats" && <StatsView groups={groups} profiles={profiles} attendance={attendance} extraEnrollments={extraEnrollments}/>}
-        {tab==="teacherpay" && <TeacherPayView groups={groups} attendance={attendance} rates={rates} tiers={tiers}/>}
-        {tab==="workshops" && <WorkshopsView/>}
-        {tab==="vouchers" && <VouchersView/>}
-        {tab==="expenses" && <ExpensesView expenses={expenses} reload={load}/>}
-      </div>
-    </div>
-  );
-}
-
-ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
-</script>
-</body>
-</html>
+          <
