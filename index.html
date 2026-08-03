@@ -177,7 +177,8 @@ async function sendWelcomeEmail(toEmail, toName){
     return {ok:false, reason:"no configurado"};
   }
   try{
-    const res = await emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, { to_email: toEmail, to_name: toName });
+    const welcomeMsg = "¡Bienvenida a CANVAS! Ya tienes tu cuenta creada. Entra en la app cuando quieras para elegir tu clase (si no lo has hecho ya), ver tu horario y gestionar tus pagos.";
+    const res = await emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, { to_email: toEmail, to_name: toName, message: welcomeMsg });
     console.log("EmailJS respuesta:", res);
     return {ok:true, res};
   }catch(e){
