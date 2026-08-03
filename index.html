@@ -113,6 +113,23 @@ function computeTotalFee(fees){
   if(fees.length>=2) return Math.round(sum*(1-MULTI_CLASS_DISCOUNT)*100)/100;
   return sum;
 }
+// Descuentos por pago adelantado (trimestral/anual)
+const PLAN_MONTHS = {monthly:1, quarterly:3, annual:10}; // anual = curso completo, sept-junio
+const PLAN_DISCOUNT = {monthly:0, quarterly:0.05, annual:0.07};
+function computePlanTotal(monthlyFee, planType){
+  const months = PLAN_MONTHS[planType]||1;
+  const discount = PLAN_DISCOUNT[planType]||0;
+  return Math.round(monthlyFee*months*(1-discount)*100)/100;
+}
+function monthsCoveredFrom(year,month,count){
+  const list=[];
+  let y=year, m=month;
+  for(let i=0;i<count;i++){
+    list.push({year:y,month:m});
+    m++; if(m>12){ m=1; y++; }
+  }
+  return list;
+}
 function classColor(name){
   if(!name) return "#8A93A6";
   if(name.includes("Aerograf")) return "#E9A800"; // amarillo
@@ -488,7 +505,7 @@ function RegisterForm({onBack}){
     if(!newUid){ setLoading(false); setErr("No se pudo crear la cuenta. Inténtalo de nuevo en unos segundos."); return; }
 
     const { error: profileErr } = await sb.from("profiles").insert({
-      id: newUid, role:"student", display_name:f.display_name, birthdate:f.birthdate,
+      id: newUid, role:"student", display_name:f.display_name, birthdate:f.birthdate, email:f.email.trim(),
       student_status:"nuevo", enrollment_month: MN[CM]+" "+CY,
       privacy_consent:false, conditions_accepted:false
     });
@@ -604,6 +621,14 @@ function RegisterForm({onBack}){
             <option value="transferencia">Transferencia</option>
             <option value="efectivo">Efectivo</option>
           </select>
+        </Field>
+        <Field label="¿Cómo prefieres pagar la cuota?">
+          <select value={f.payment_type} onChange={e=>upd("payment_type",e.target.value)}>
+            <option value="monthly">Mensual</option>
+            <option value="quarterly">Trimestral (5% de descuento)</option>
+            <option value="annual">Curso completo (7% de descuento)</option>
+          </select>
+          {f.group_id && f.payment_type!=="monthly" && (()=>{const g=groups.find(gg=>String(gg.id)===String(f.group_id)); return g && <div className="ok" style={{marginTop:6}}>Total con descuento: {computePlanTotal(g.fee,f.payment_type)}€</div>;})()}
         </Field>
         <div style={{background:"var(--fondo)",border:"2px solid #D8E3F5",borderRadius:10,padding:14,marginBottom:12}}>
           <div style={{fontWeight:800,color:"var(--azul-oscuro)",marginBottom:8}}>Condiciones de la academia</div>
@@ -960,9 +985,14 @@ function StudentApp({profile,onLogout}){
     sb.from("payments").select("*").eq("student_id",profile.id).order("year",{ascending:false}).order("month",{ascending:false}).then(({data})=>setPayments(data||[]));
   },[]);
 
-  const thisMonthPayment = payments.find(p=>p.year===CY && p.month===CM);
+  const duePaymentYear = todayISO < COURSE_START ? parseInt(COURSE_START.slice(0,4)) : CY;
+  const duePaymentMonth = todayISO < COURSE_START ? parseInt(COURSE_START.slice(5,7)) : CM;
+  const thisMonthPayment = payments.find(p=>p.year===duePaymentYear && p.month===duePaymentMonth);
   const myGroupIds = [profile.group_id, ...extraGroups.map(g=>g.id)].filter(Boolean);
-  const totalFee = computeTotalFee([profile.fee, ...extraGroups.map(g=>g.fee)]);
+  const monthlyFee = computeTotalFee([profile.fee, ...extraGroups.map(g=>g.fee)]);
+  const planType = profile.payment_type || "monthly";
+  const totalFee = planType==="monthly" ? monthlyFee : computePlanTotal(monthlyFee, planType);
+  const planMonths = PLAN_MONTHS[planType]||1;
   const hasDiscount = (1+extraGroups.length)>=2;
 
   async function addClass(g){
@@ -995,15 +1025,17 @@ function StudentApp({profile,onLogout}){
   async function upload(){
     if(!file){ setMsg("Elige un archivo primero."); return; }
     setMsg("Subiendo…");
-    const path = `${profile.id}/${CY}-${CM}-${Date.now()}-${file.name}`;
+    const path = `${profile.id}/${duePaymentYear}-${duePaymentMonth}-${Date.now()}-${file.name}`;
     const { error: upErr } = await sb.storage.from("receipts").upload(path, file);
     if(upErr){ setMsg("Error al subir: "+upErr.message); return; }
-    const { error: payErr } = await sb.from("payments").upsert({
-      student_id:profile.id, year:CY, month:CM, status:"uploaded", filename:file.name,
-      file_path:path, amount:totalFee, upload_date:todayISO
-    }, {onConflict:"student_id,year,month"});
+    const months = monthsCoveredFrom(duePaymentYear, duePaymentMonth, planMonths);
+    const rows = months.map((m,i)=>({
+      student_id:profile.id, year:m.year, month:m.month, status:"uploaded",
+      filename:file.name, file_path:path, amount: i===0?totalFee:0, upload_date:todayISO
+    }));
+    const { error: payErr } = await sb.from("payments").upsert(rows, {onConflict:"student_id,year,month"});
     if(payErr){ setMsg("Error guardando el pago: "+payErr.message); return; }
-    setMsg("¡Justificante subido! En cuanto lo validemos verás el estado actualizado.");
+    setMsg(planMonths>1 ? `¡Justificante subido! Cubre ${planMonths} meses — en cuanto lo validemos, los verás todos actualizados.` : "¡Justificante subido! En cuanto lo validemos verás el estado actualizado.");
     sb.from("payments").select("*").eq("student_id",profile.id).order("year",{ascending:false}).then(({data})=>setPayments(data||[]));
   }
 
@@ -1075,10 +1107,13 @@ function StudentApp({profile,onLogout}){
         {tab==="pagos" && (
         <>
         <div className="card" style={{marginBottom:14}}>
-          <h3 style={{marginTop:0}}>Pago de este mes ({MN[CM]})</h3>
+          <h3 style={{marginTop:0}}>Pago de {MN[duePaymentMonth]} {todayISO<COURSE_START?"(para formalizar tu inscripción)":""}</h3>
+          {todayISO<COURSE_START && (
+            <p style={{fontSize:13,color:"var(--gris)",marginTop:-6}}>Ahora mismo esto es una preinscripción — para confirmar tu plaza del nuevo curso, hay que abonar la cuota de {MN[duePaymentMonth]}.</p>
+          )}
           {thisMonthPayment?.status==="validated" && (
             <div style={{background:"#E4F7EC",border:"2px solid var(--verde)",borderRadius:10,padding:12,marginBottom:10}}>
-              ✅ <b>Se ha abonado la cuota de {MN[CM]}.</b> ¡Gracias!
+              ✅ <b>Se ha abonado la cuota de {MN[duePaymentMonth]}.</b> ¡Gracias!
             </div>
           )}
           {thisMonthPayment?.status==="validated"
@@ -1277,7 +1312,7 @@ function TeacherApp({profile,onLogout}){
   );
 }
 
-function TeacherGroupCard({group:g, profiles, extraEnrollments, onTakeAttendance, showDay}){
+function TeacherGroupCard({group:g, profiles, extraEnrollments, onTakeAttendance, showDay, onEdit}){
   const [open,setOpen] = useState(false);
   const [notes,setNotes] = useState([]);
   const [newNote,setNewNote] = useState("");
@@ -1304,6 +1339,7 @@ function TeacherGroupCard({group:g, profiles, extraEnrollments, onTakeAttendance
         <div className="row" style={{gap:6}}>
           <button className="btn-ghost" onClick={()=>setOpen(o=>!o)}>{open?"Cerrar":"Ver alumnos y avisos"}</button>
           {onTakeAttendance && <button className="btn-secondary" onClick={onTakeAttendance}>Pasar lista</button>}
+          {onEdit && <button className="btn-ghost" onClick={onEdit}>Editar</button>}
         </div>
       </div>
       {open && (
@@ -1366,6 +1402,46 @@ function CEODashboard({groups,profiles,payments,expenses,extraEnrollments}){
   );
 }
 
+function StudentsDirectoryView({groups,profiles,extraEnrollments}){
+  const sortedGroups = [...groups].sort((a,b)=> a.day-b.day || a.time_start.localeCompare(b.time_start));
+  function studentsOf(g){
+    const names = effectiveRoster(g,profiles,extraEnrollments);
+    return names.map(name=>{
+      const p = profiles.find(pp=>pp.display_name===name);
+      return {name, p};
+    });
+  }
+  return (
+    <div>
+      {sortedGroups.map(g=>{
+        const students = studentsOf(g);
+        if(students.length===0) return null;
+        return (
+          <div key={g.id} className="card" style={{marginBottom:12,borderLeft:`4px solid ${classColor(g.name)}`}}>
+            <div style={{fontWeight:800,color:"var(--azul-oscuro)",marginBottom:8}}>
+              {DNF[g.day-1]} {g.time_start}-{g.time_end} · {g.name} · {g.teacher} ({students.length}/{capOf(g)})
+            </div>
+            <table>
+              <thead><tr><th>Alumno/a</th><th>Edad</th><th>Teléfono</th><th>Email</th></tr></thead>
+              <tbody>
+                {students.map(({name,p})=>(
+                  <tr key={name}>
+                    <td>{name}</td>
+                    <td>{p?.birthdate ? ageFromBirthdate(p.birthdate) : "—"}</td>
+                    <td>{p?.guardian_phone || "—"}</td>
+                    <td>{p?.email || p?.guardian_email || "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        );
+      })}
+      {sortedGroups.every(g=>studentsOf(g).length===0) && <div className="empty">Todavía no hay alumnos inscritos en ninguna clase.</div>}
+    </div>
+  );
+}
+
 /* ============================================================
    VISTA CEO — GRUPOS
    ============================================================ */
@@ -1392,10 +1468,7 @@ function GroupsView({groups,profiles,extraEnrollments,reload}){
         <div key={i} style={{marginBottom:14}}>
           <h4 style={{color:"var(--azul-oscuro)"}}>{dn}</h4>
           {groups.filter(g=>g.day===i+1).map(g=>(
-            <div key={g.id} className="card" style={{marginBottom:8,borderLeft:`4px solid ${classColor(g.name)}`,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-              <div>{g.time_start}-{g.time_end} · <b>{g.name}</b> · {g.teacher} {g.level && `(${g.level})`} · {effectiveRoster(g,profiles,extraEnrollments).length}/{capOf(g)} · {g.fee}€</div>
-              <button className="btn-ghost" onClick={()=>openEdit(g)}>Editar</button>
-            </div>
+            <TeacherGroupCard key={g.id} group={g} profiles={profiles} extraEnrollments={extraEnrollments} onEdit={()=>openEdit(g)}/>
           ))}
         </div>
       ))}
@@ -1430,9 +1503,13 @@ function GroupsView({groups,profiles,extraEnrollments,reload}){
    VISTA CEO — PAGOS
    ============================================================ */
 function PaymentsView({profiles,payments,reload}){
+  const [year,setYear] = useState(todayISO<COURSE_START ? parseInt(COURSE_START.slice(0,4)) : CY);
+  const [month,setMonth] = useState(todayISO<COURSE_START ? parseInt(COURSE_START.slice(5,7)) : CM);
   const students = profiles.filter(p=>p.role==="student");
-  async function validate(studentId){
-    await sb.from("payments").update({status:"validated",validated_date:todayISO}).eq("student_id",studentId).eq("year",CY).eq("month",CM);
+  async function validate(studentId, filePath){
+    let q = sb.from("payments").update({status:"validated",validated_date:todayISO}).eq("student_id",studentId);
+    q = filePath ? q.eq("file_path",filePath) : q.eq("year",year).eq("month",month);
+    await q;
     reload();
   }
   async function view(path){
@@ -1440,18 +1517,25 @@ function PaymentsView({profiles,payments,reload}){
     if(data) window.open(data.signedUrl,"_blank");
   }
   return (
-    <table><thead><tr><th>Alumno</th><th>Cuota</th><th>Estado</th><th>Justificante</th><th></th></tr></thead>
-    <tbody>
-      {students.map(s=>{
-        const p = payments.find(pp=>pp.student_id===s.id&&pp.year===CY&&pp.month===CM);
-        return <tr key={s.id}>
-          <td>{s.display_name}</td><td>{s.fee}€</td>
-          <td>{p?.status==="validated"?<span className="badge badge-ok">Validado</span>:p?.status==="uploaded"?<span className="badge badge-warn">Subido</span>:<span className="badge badge-bad">Pendiente</span>}</td>
-          <td>{p?.file_path && <a href="#" onClick={e=>{e.preventDefault();view(p.file_path);}}>Ver</a>}</td>
-          <td>{p?.status==="uploaded" && <button className="btn-secondary" onClick={()=>validate(s.id)}>Validar</button>}</td>
-        </tr>;
-      })}
-    </tbody></table>
+    <div>
+      <div className="row" style={{marginBottom:10,alignItems:"flex-end"}}>
+        <div className="col"><Field label="Mes"><select value={month} onChange={e=>setMonth(parseInt(e.target.value))}>{MN.slice(1).map((m,i)=><option key={m} value={i+1}>{m}</option>)}</select></Field></div>
+        <div className="col"><Field label="Año"><select value={year} onChange={e=>setYear(parseInt(e.target.value))}>{[CY-1,CY,CY+1].map(y=><option key={y} value={y}>{y}</option>)}</select></Field></div>
+      </div>
+      <table><thead><tr><th>Alumno</th><th>Cuota</th><th>Plan</th><th>Estado</th><th>Justificante</th><th></th></tr></thead>
+      <tbody>
+        {students.map(s=>{
+          const p = payments.find(pp=>pp.student_id===s.id&&pp.year===year&&pp.month===month);
+          const planLabel = {monthly:"Mensual",quarterly:"Trimestral",annual:"Curso completo"}[s.payment_type]||"Mensual";
+          return <tr key={s.id}>
+            <td>{s.display_name}</td><td>{s.fee}€</td><td>{planLabel}</td>
+            <td>{p?.status==="validated"?<span className="badge badge-ok">Validado</span>:p?.status==="uploaded"?<span className="badge badge-warn">Subido</span>:<span className="badge badge-bad">Pendiente</span>}</td>
+            <td>{p?.file_path && <a href="#" onClick={e=>{e.preventDefault();view(p.file_path);}}>Ver</a>}</td>
+            <td>{p?.status==="uploaded" && <button className="btn-secondary" onClick={()=>validate(s.id,p.file_path)}>Validar{s.payment_type!=="monthly"?" (todos los meses)":""}</button>}</td>
+          </tr>;
+        })}
+      </tbody></table>
+    </div>
   );
 }
 
@@ -1677,7 +1761,7 @@ function CEOApp({profile,onLogout}){
   useEffect(load,[]);
 
   const tabs = [
-    ["dashboard","Dashboard"],["groups","Clases"],["payments","Pagos"],["stats","Estadísticas"],
+    ["dashboard","Dashboard"],["groups","Clases"],["students","Alumnos"],["payments","Pagos"],["stats","Estadísticas"],
     ["teacherpay","Pago profesoras"],["workshops","Talleres"],["vouchers","Bonos"],["expenses","Gastos"]
   ];
 
@@ -1690,6 +1774,7 @@ function CEOApp({profile,onLogout}){
         </div>
         {tab==="dashboard" && <CEODashboard groups={groups} profiles={profiles} payments={payments} expenses={expenses} extraEnrollments={extraEnrollments}/>}
         {tab==="groups" && <GroupsView groups={groups} profiles={profiles} extraEnrollments={extraEnrollments} reload={load}/>}
+        {tab==="students" && <StudentsDirectoryView groups={groups} profiles={profiles} extraEnrollments={extraEnrollments}/>}
         {tab==="payments" && <PaymentsView profiles={profiles} payments={payments} reload={load}/>}
         {tab==="stats" && <StatsView groups={groups} profiles={profiles} attendance={attendance} extraEnrollments={extraEnrollments}/>}
         {tab==="teacherpay" && <TeacherPayView groups={groups} attendance={attendance} rates={rates} tiers={tiers}/>}
