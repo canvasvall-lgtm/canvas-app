@@ -974,7 +974,16 @@ function StudentApp({profile,onLogout}){
   }
   async function confirmAddClass(){
     if(!newGroupChoice) return;
-    await addClass(newGroupChoice);
+    setAddMsg("");
+    if(!group){
+      // Es su primera clase: se guarda como clase PRINCIPAL del perfil, no como extra
+      const {error} = await sb.from("profiles").update({group_id:newGroupChoice.id, fee:newGroupChoice.fee}).eq("id",profile.id);
+      if(error){ setAddMsg(error.message); return; }
+      setGroup(newGroupChoice);
+      sb.from("groups").select("*").then(({data})=>{ const all=data||[]; setAllGroups(all); loadExtra(all); });
+    } else {
+      await addClass(newGroupChoice);
+    }
     setAddingClass(false); setNewGroupChoice(null);
   }
   async function removeClass(row,groupName){
