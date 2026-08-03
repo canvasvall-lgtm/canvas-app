@@ -5,6 +5,9 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1"/>
 <title>CANVAS — Academia de Dibujo y Pintura</title>
 <link rel="icon" id="favicon" type="image/jpeg" href=""/>
+<link rel="apple-touch-icon" id="appleicon" href=""/>
+<link rel="manifest" id="webmanifest" href=""/>
+<meta name="theme-color" content="#2350A0"/>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
@@ -78,7 +81,21 @@ const SUPABASE_KEY = "sb_publishable_HHIUBJUIJZh12xGs4mBvww_yl92q3JR";
 const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
   auth: { persistSession: true, autoRefreshToken: true }
 });
-document.getElementById("favicon").href = LOGO_B64;
+try{
+  const fav=document.getElementById("favicon"); if(fav) fav.href = LOGO_B64;
+  const appleIcon=document.getElementById("appleicon"); if(appleIcon) appleIcon.href = LOGO_B64;
+  const manifest = {
+    name: "CANVAS — Academia de Dibujo y Pintura",
+    short_name: "CANVAS",
+    start_url: ".",
+    display: "standalone",
+    background_color: "#EEF5FF",
+    theme_color: "#2350A0",
+    icons: [{ src: LOGO_B64, sizes: "300x300", type: "image/jpeg" }]
+  };
+  const manifestUrl = URL.createObjectURL(new Blob([JSON.stringify(manifest)], {type:"application/manifest+json"}));
+  const manifestLink=document.getElementById("webmanifest"); if(manifestLink) manifestLink.href = manifestUrl;
+}catch(e){ console.warn("No se pudo configurar el icono de pantalla de inicio:",e); }
 
 /* ============================================================
    CONSTANTES DE MARCA Y NEGOCIO
@@ -151,7 +168,7 @@ const IBAN = "ES48 0182 1605 5802 0164 4508"; // BBVA Cuenta Negocios — titula
 // EmailJS — rellena estos 3 valores cuando tengas tu cuenta creada (emailjs.com)
 const EMAILJS_PUBLIC_KEY = "u8MI4wxwkid6PEkAM";
 const EMAILJS_SERVICE_ID = "service_canvasapp";
-const EMAILJS_TEMPLATE_ID = "template_tvoaa1h";
+const EMAILJS_TEMPLATE_ID = "template_hmg8haw";
 if(EMAILJS_PUBLIC_KEY) emailjs.init(EMAILJS_PUBLIC_KEY);
 
 async function sendWelcomeEmail(toEmail, toName){
@@ -916,6 +933,7 @@ function ClassNotesForStudent({groupIds,allGroups}){
    VISTA ALUMNO
    ============================================================ */
 function StudentApp({profile,onLogout}){
+  const [tab,setTab] = useState("clase");
   const [group,setGroup] = useState(null);
   const [allGroups,setAllGroups] = useState([]);
   const [extraGroupIds,setExtraGroupIds] = useState([]); // ids de student_groups (para poder borrar)
@@ -984,39 +1002,68 @@ function StudentApp({profile,onLogout}){
       <div className="topbar"><Logo size={30} dark={true}/><button className="btn-ghost" onClick={onLogout}>Salir</button></div>
       <div className="container">
         {isBirthday(profile.birthdate) && <BirthdayBanner name={profile.display_name}/>}
+        <h2 style={{color:"var(--azul-oscuro)",marginBottom:10}}>¡Hola, {profile.display_name.split(" ")[0]}! 👋</h2>
+        {myGroupIds.length>0 && <CalendarInfoBanner/>}
+
+        <div className="tabs" style={{marginBottom:14}}>
+          <div className={"tab "+(tab==="clase"?"active":"")} onClick={()=>setTab("clase")}>Mi clase</div>
+          <div className={"tab "+(tab==="pagos"?"active":"")} onClick={()=>setTab("pagos")}>Pagos</div>
+          {myGroupIds.length>0 && <div className={"tab "+(tab==="recuperar"?"active":"")} onClick={()=>setTab("recuperar")}>Recuperaciones</div>}
+          {myGroupIds.length>0 && <div className={"tab "+(tab==="avisos"?"active":"")} onClick={()=>setTab("avisos")}>Avisos</div>}
+        </div>
+
+        {tab==="clase" && (
         <div className="card" style={{marginBottom:14}}>
-          <h2 style={{marginTop:0,color:"var(--azul-oscuro)"}}>¡Hola, {profile.display_name.split(" ")[0]}! 👋</h2>
-          {group ? <p>Tu clase: <b>{group.name}</b> — {DNF[group.day-1]} {group.time_start}-{group.time_end} con <b style={{color:classColor(group.name)}}>{group.teacher}</b></p> : <p>Aún no tienes clase asignada — escríbenos y te la asignamos.</p>}
+          {group ? (
+            <p>Tu clase: <b>{group.name}</b> — {DNF[group.day-1]} {group.time_start}-{group.time_end} con <b style={{color:classColor(group.name)}}>{group.teacher}</b></p>
+          ) : (
+            <div style={{background:"#FFF3D6",border:"2px solid var(--mostaza)",borderRadius:10,padding:14,marginBottom:4}}>
+              <div style={{fontWeight:800,color:"#6a4b00",marginBottom:4}}>⚠️ Tu inscripción no está completa todavía</div>
+              <div style={{fontSize:13,color:"#6a4b00"}}>Todavía no has elegido ninguna clase — tu plaza no queda reservada hasta que lo hagas. Elige tu clase aquí abajo para terminar tu inscripción.</div>
+            </div>
+          )}
           {extraGroups.map((g,i)=>(
             <div key={g.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:6}}>
-              <p style={{margin:0}}>Además: <b>{g.name}</b> — {DNF[g.day-1]} {g.time_start}-{g.time_end} con <b style={{color:classColor(g.name)}}>{g.teacher}</b></p>
+              <p style={{margin:0}}>{group?"Además":"Tu clase"}: <b>{g.name}</b> — {DNF[g.day-1]} {g.time_start}-{g.time_end} con <b style={{color:classColor(g.name)}}>{g.teacher}</b></p>
               <button className="btn-ghost" style={{padding:"4px 10px",fontSize:12}} onClick={()=>removeClass(extraGroupIds[i],g.name)}>Quitar</button>
             </div>
           ))}
           {(1+extraGroups.length)>=2 && <div className="badge badge-ok" style={{marginTop:8}}>5% de descuento aplicado por estar en {1+extraGroups.length} clases</div>}
           {profile.enrollment_fee>0 && !profile.enrollment_fee_paid && <div className="badge badge-warn" style={{marginTop:8}}>Matrícula pendiente: {profile.enrollment_fee}€</div>}
           {!addingClass
-            ? <button className="btn-ghost" style={{marginTop:10}} onClick={()=>setAddingClass(true)}>+ Añadir otra clase</button>
+            ? <button className={myGroupIds.length===0?"btn-primary":"btn-ghost"} style={{marginTop:10}} onClick={()=>setAddingClass(true)}>{myGroupIds.length===0?"🎨 Elegir mi clase":"+ Añadir otra clase"}</button>
             : (
               <div style={{marginTop:10,background:"var(--fondo)",border:"2px solid var(--azul-claro)",borderRadius:12,padding:12}}>
-                <div style={{fontWeight:700,color:"var(--azul-oscuro)",marginBottom:8}}>📅 Estás ampliando tus clases — selecciona en qué grupo quieres apuntarte</div>
+                <div style={{fontWeight:700,color:"var(--azul-oscuro)",marginBottom:8}}>
+                  {myGroupIds.length===0 ? "📅 Elige la clase en la que quieres inscribirte" : "📅 Estás ampliando tus clases — selecciona en qué grupo quieres apuntarte"}
+                </div>
                 <WeeklyTimetable groups={allGroups.filter(g=>!myGroupIds.includes(g.id))} profiles={[]} onSelect={setNewGroupChoice} selectedId={newGroupChoice?.id}/>
                 {newGroupChoice && <div className="ok" style={{marginTop:6}}>Has elegido: {newGroupChoice.name} · {DNF[newGroupChoice.day-1]} {newGroupChoice.time_start}-{newGroupChoice.time_end}</div>}
                 {addMsg && <p className="ok">{addMsg}</p>}
                 <div className="row" style={{marginTop:10}}>
-                  <button className="btn-ghost" onClick={()=>{setAddingClass(false); setNewGroupChoice(null); setAddMsg("");}}>Cancelar</button>
+                  {myGroupIds.length>0 && <button className="btn-ghost" onClick={()=>{setAddingClass(false); setNewGroupChoice(null); setAddMsg("");}}>Cancelar</button>}
                   <button className="btn-primary" disabled={!newGroupChoice} onClick={confirmAddClass}>Inscribirme</button>
                 </div>
               </div>
             )
           }
         </div>
+        )}
 
-        <CalendarInfoBanner/>
-        <ClassNotesForStudent groupIds={myGroupIds} allGroups={allGroups}/>
-        <MySessionsPanel profile={profile} groups={[group,...extraGroups].filter(Boolean)} allGroups={allGroups}/>
-        <RecoveryBookingPanel profile={profile} groups={allGroups} myGroupIds={myGroupIds}/>
+        {tab==="clase" && myGroupIds.length>0 &&
+          <MySessionsPanel profile={profile} groups={[group,...extraGroups].filter(Boolean)} allGroups={allGroups}/>
+        }
 
+        {tab==="recuperar" && myGroupIds.length>0 &&
+          <RecoveryBookingPanel profile={profile} groups={allGroups} myGroupIds={myGroupIds}/>
+        }
+
+        {tab==="avisos" && myGroupIds.length>0 &&
+          <ClassNotesForStudent groupIds={myGroupIds} allGroups={allGroups}/>
+        }
+
+        {tab==="pagos" && (
+        <>
         <div className="card" style={{marginBottom:14}}>
           <h3 style={{marginTop:0}}>Pago de este mes ({MN[CM]})</h3>
           {thisMonthPayment?.status==="validated" && (
@@ -1045,6 +1092,8 @@ function StudentApp({profile,onLogout}){
           </tbody></table>
           {payments.length===0 && <div className="empty">Aún no hay pagos registrados.</div>}
         </div>
+        </>
+        )}
       </div>
     </div>
   );
