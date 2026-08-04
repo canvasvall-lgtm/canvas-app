@@ -114,13 +114,7 @@ function computeTotalFee(fees){
   return sum;
 }
 // Descuentos por pago adelantado (trimestral/anual)
-const PLAN_MONTHS = {monthly:1, quarterly:3, annual:10}; // anual = curso completo, sept-junio
 const PLAN_DISCOUNT = {monthly:0, quarterly:0.05, annual:0.07};
-function computePlanTotal(monthlyFee, planType){
-  const months = PLAN_MONTHS[planType]||1;
-  const discount = PLAN_DISCOUNT[planType]||0;
-  return Math.round(monthlyFee*months*(1-discount)*100)/100;
-}
 function monthsCoveredFrom(year,month,count){
   const list=[];
   let y=year, m=month;
@@ -159,6 +153,26 @@ const SCHOOL_CLOSURES = [
   {start:"2027-04-23", end:"2027-04-23", label:"Día de Castilla y León"},
   {start:"2027-05-13", end:"2027-05-13", label:"San Pedro Regalado (festivo local de Valladolid)"}
 ];
+// El curso completo (sept-junio, 10 meses) partido en los 3 trimestres reales:
+// 1er trimestre sept-dic (4 meses), 2º ene-mar (3 meses), 3er abr-jun (3 meses)
+const COURSE_START_YEAR = parseInt(COURSE_START.slice(0,4));
+const SCHOOL_MONTHS = monthsCoveredFrom(COURSE_START_YEAR, 9, 10);
+const TRIMESTRE_BLOCKS = [SCHOOL_MONTHS.slice(0,4), SCHOOL_MONTHS.slice(4,7), SCHOOL_MONTHS.slice(7,10)];
+function monthsForPlan(planType, year, month){
+  const idx = SCHOOL_MONTHS.findIndex(m=>m.year===year && m.month===month);
+  if(idx===-1) return [{year,month}]; // fuera del curso (no debería pasar en uso normal)
+  if(planType==="monthly") return [{year,month}];
+  if(planType==="annual") return SCHOOL_MONTHS.slice(idx);
+  // trimestral: cubre hasta el final del trimestre real en el que caiga el mes actual
+  const block = TRIMESTRE_BLOCKS.find(b=>b.some(m=>m.year===year&&m.month===month));
+  const bIdx = block.findIndex(m=>m.year===year&&m.month===month);
+  return block.slice(bIdx);
+}
+function computePlanTotal(monthlyFee, planType, year, month){
+  const months = monthsForPlan(planType, year, month);
+  const discount = PLAN_DISCOUNT[planType]||0;
+  return Math.round(monthlyFee*months.length*(1-discount)*100)/100;
+}
 function isSchoolDay(dateStr){
   if(dateStr < COURSE_START || dateStr > COURSE_END) return false;
   return !SCHOOL_CLOSURES.some(c => dateStr>=c.start && dateStr<=c.end);
@@ -485,13 +499,15 @@ function RegisterForm({onBack}){
 
   function upd(k,v){ setF(prev=>({...prev,[k]:v})); }
   const age = f.birthdate ? ageFromBirthdate(f.birthdate) : null;
+  const dueY = todayISO<COURSE_START ? COURSE_START_YEAR : CY;
+  const dueM = todayISO<COURSE_START ? parseInt(COURSE_START.slice(5,7)) : CM;
   const isMinor = age===null || age < 18;
 
   async function submitAccount(e){
     e.preventDefault(); setErr("");
     if(f.password.length<6){ setErr("La contraseña debe tener al menos 6 caracteres."); return; }
     if(f.password!==f.password2){ setErr("Las dos contraseñas no coinciden."); return; }
-    if(!f.display_name.trim()){ setErr("Indica el nombre completo."); return; }
+    if(!f.display_name.trim() || f.display_name.trim().split(/\s+/).length<2){ setErr("Indica el nombre completo, con al menos un apellido."); return; }
     if(!f.birthdate){ setErr("Indica la fecha de nacimiento."); return; }
 
     setLoading(true);
@@ -628,7 +644,7 @@ function RegisterForm({onBack}){
             <option value="quarterly">Trimestral (5% de descuento)</option>
             <option value="annual">Curso completo (7% de descuento)</option>
           </select>
-          {f.group_id && f.payment_type!=="monthly" && (()=>{const g=groups.find(gg=>String(gg.id)===String(f.group_id)); return g && <div className="ok" style={{marginTop:6}}>Total con descuento: {computePlanTotal(g.fee,f.payment_type)}€</div>;})()}
+          {f.group_id && f.payment_type!=="monthly" && (()=>{const g=groups.find(gg=>String(gg.id)===String(f.group_id)); return g && <div className="ok" style={{marginTop:6}}>Total con descuento: {computePlanTotal(g.fee,f.payment_type,dueY,dueM)}€ ({monthsForPlan(f.payment_type,dueY,dueM).length} meses)</div>;})()}
         </Field>
         <div style={{background:"var(--fondo)",border:"2px solid #D8E3F5",borderRadius:10,padding:14,marginBottom:12}}>
           <div style={{fontWeight:800,color:"var(--azul-oscuro)",marginBottom:8}}>Condiciones de la academia</div>
@@ -966,6 +982,7 @@ function StudentApp({profile,onLogout}){
   const [extraGroups,setExtraGroups] = useState([]); // los grupos completos
   const [payments,setPayments] = useState([]);
   const [file,setFile] = useState(null);
+  const [uploading,setUploading] = useState(false);
   const [msg,setMsg] = useState("");
   const [addingClass,setAddingClass] = useState(false);
   const [newGroupChoice,setNewGroupChoice] = useState(null);
@@ -990,9 +1007,15 @@ function StudentApp({profile,onLogout}){
   const thisMonthPayment = payments.find(p=>p.year===duePaymentYear && p.month===duePaymentMonth);
   const myGroupIds = [profile.group_id, ...extraGroups.map(g=>g.id)].filter(Boolean);
   const monthlyFee = computeTotalFee([profile.fee, ...extraGroups.map(g=>g.fee)]);
-  const planType = profile.payment_type || "monthly";
-  const totalFee = planType==="monthly" ? monthlyFee : computePlanTotal(monthlyFee, planType);
-  const planMonths = PLAN_MONTHS[planType]||1;
+  const [planType,setPlanType] = useState(profile.payment_type || "monthly");
+  const [planMsg,setPlanMsg] = useState("");
+  async function changePlanType(newType){
+    setPlanType(newType);
+    const {error} = await sb.from("profiles").update({payment_type:newType}).eq("id",profile.id);
+    setPlanMsg(error ? "❌ "+error.message : "✅ Periodicidad actualizada.");
+  }
+  const totalFee = planType==="monthly" ? monthlyFee : computePlanTotal(monthlyFee, planType, duePaymentYear, duePaymentMonth);
+  const planMonths = monthsForPlan(planType, duePaymentYear, duePaymentMonth).length;
   const hasDiscount = (1+extraGroups.length)>=2;
 
   async function addClass(g){
@@ -1024,19 +1047,25 @@ function StudentApp({profile,onLogout}){
 
   async function upload(){
     if(!file){ setMsg("Elige un archivo primero."); return; }
-    setMsg("Subiendo…");
-    const path = `${profile.id}/${duePaymentYear}-${duePaymentMonth}-${Date.now()}-${file.name}`;
-    const { error: upErr } = await sb.storage.from("receipts").upload(path, file);
-    if(upErr){ setMsg("Error al subir: "+upErr.message); return; }
-    const months = monthsCoveredFrom(duePaymentYear, duePaymentMonth, planMonths);
-    const rows = months.map((m,i)=>({
-      student_id:profile.id, year:m.year, month:m.month, status:"uploaded",
-      filename:file.name, file_path:path, amount: i===0?totalFee:0, upload_date:todayISO
-    }));
-    const { error: payErr } = await sb.from("payments").upsert(rows, {onConflict:"student_id,year,month"});
-    if(payErr){ setMsg("Error guardando el pago: "+payErr.message); return; }
-    setMsg(planMonths>1 ? `¡Justificante subido! Cubre ${planMonths} meses — en cuanto lo validemos, los verás todos actualizados.` : "¡Justificante subido! En cuanto lo validemos verás el estado actualizado.");
-    sb.from("payments").select("*").eq("student_id",profile.id).order("year",{ascending:false}).then(({data})=>setPayments(data||[]));
+    setMsg("Subiendo…"); setUploading(true);
+    try{
+      const path = `${profile.id}/${duePaymentYear}-${duePaymentMonth}-${Date.now()}-${file.name}`;
+      const { error: upErr } = await sb.storage.from("receipts").upload(path, file);
+      if(upErr){ setMsg("❌ Error al subir: "+upErr.message); return; }
+      const months = monthsCoveredFrom(duePaymentYear, duePaymentMonth, planMonths);
+      const rows = months.map((m,i)=>({
+        student_id:profile.id, year:m.year, month:m.month, status:"uploaded",
+        filename:file.name, file_path:path, amount: i===0?totalFee:0, upload_date:todayISO
+      }));
+      const { error: payErr } = await sb.from("payments").upsert(rows, {onConflict:"student_id,year,month"});
+      if(payErr){ setMsg("❌ Error guardando el pago: "+payErr.message); return; }
+      setMsg(planMonths>1 ? `✅ ¡Justificante subido! Cubre ${planMonths} meses — en cuanto lo validemos, los verás todos actualizados.` : "✅ ¡Justificante subido! En cuanto lo validemos verás el estado actualizado.");
+      sb.from("payments").select("*").eq("student_id",profile.id).order("year",{ascending:false}).then(({data})=>setPayments(data||[]));
+    }catch(e){
+      setMsg("❌ Ha ocurrido un error inesperado: "+(e?.message||JSON.stringify(e))+". Vuelve a intentarlo, y si persiste, avísanos.");
+    }finally{
+      setUploading(false);
+    }
   }
 
   return (
@@ -1107,6 +1136,15 @@ function StudentApp({profile,onLogout}){
         {tab==="pagos" && (
         <>
         <div className="card" style={{marginBottom:14}}>
+          <h3 style={{marginTop:0}}>¿Cómo prefieres pagar?</h3>
+          <select value={planType} onChange={e=>changePlanType(e.target.value)}>
+            <option value="monthly">Mensual</option>
+            <option value="quarterly">Trimestral (5% de descuento)</option>
+            <option value="annual">Curso completo (7% de descuento)</option>
+          </select>
+          {planMsg && <p style={{fontSize:13,marginTop:6}}>{planMsg}</p>}
+        </div>
+        <div className="card" style={{marginBottom:14}}>
           <h3 style={{marginTop:0}}>Pago de {MN[duePaymentMonth]} {todayISO<COURSE_START?"(para formalizar tu inscripción)":""}</h3>
           {todayISO<COURSE_START && (
             <p style={{fontSize:13,color:"var(--gris)",marginTop:-6}}>Ahora mismo esto es una preinscripción — para confirmar tu plaza del nuevo curso, hay que abonar la cuota de {MN[duePaymentMonth]}.</p>
@@ -1121,10 +1159,10 @@ function StudentApp({profile,onLogout}){
             : thisMonthPayment?.status==="uploaded"
               ? <span className="badge badge-warn">Justificante subido, pendiente de validar</span>
               : <span className="badge badge-bad">Pendiente</span>}
-          <p style={{fontSize:14,marginTop:10}}>Cuota{hasDiscount?" total (con 5% dto.)":""}: <b>{totalFee}€</b>. Transferencia al IBAN: <b>{IBAN}</b> (titular: Laura Sanz).</p>
-          <p style={{fontSize:13,color:"var(--rojo)",marginTop:-4}}>⚠️ Importante: en el <b>concepto</b> de la transferencia pon el nombre del alumno/a (<b>{profile.display_name}</b>), para poder identificar tu pago.</p>
+          <p style={{fontSize:14,marginTop:10}}>Cuota{hasDiscount?" (con 5% dto. por varias clases)":""}{planType!=="monthly"?` — plan ${planType==="quarterly"?"trimestral":"curso completo"}, cubre ${planMonths} meses`:""}: <b>{totalFee}€</b>. Transferencia al IBAN: <b>{IBAN}</b> (titular: Laura Sanz).</p>
+          <p style={{fontSize:13,color:"var(--rojo)",marginTop:-4}}>⚠️ Importante: en el <b>concepto</b> de la transferencia pon el <b>nombre y apellidos completos</b> del alumno/a (<b>{profile.display_name}</b>), para poder diferenciarte de otras personas con el mismo nombre.</p>
           <input type="file" accept="image/*,.pdf" onChange={e=>setFile(e.target.files[0])}/>
-          <button className="btn-primary" style={{marginTop:8}} onClick={upload}>Subir justificante</button>
+          <button className="btn-primary" style={{marginTop:8}} onClick={upload} disabled={uploading}>{uploading?"Subiendo…":"Subir justificante"}</button>
           {msg && <p style={{fontSize:13,marginTop:6}}>{msg}</p>}
         </div>
 
@@ -1370,10 +1408,14 @@ function TeacherGroupCard({group:g, profiles, extraEnrollments, onTakeAttendance
    ============================================================ */
 function CEODashboard({groups,profiles,payments,expenses,extraEnrollments}){
   const students = profiles.filter(p=>p.role==="student");
+  const enrolledStudents = students.filter(s=>s.group_id); // solo quien ya ha completado su inscripción
+  const incompleteCount = students.length - enrolledStudents.length;
   const totalStudents = groups.reduce((s,g)=>s+effectiveRoster(g,profiles,extraEnrollments).length,0);
   const occupancy = groups.length? Math.round(100*groups.reduce((s,g)=>s+Math.min(effectiveRoster(g,profiles,extraEnrollments).length,capOf(g)),0)/groups.reduce((s,g)=>s+capOf(g),0)) : 0;
-  const validated = payments.filter(p=>p.year===CY&&p.month===CM&&p.status==="validated").reduce((s,p)=>s+(p.amount||0),0);
-  const pendingCount = students.filter(s=>!payments.some(p=>p.student_id===s.id&&p.year===CY&&p.month===CM&&p.status!=="pending")).length;
+  const duePaymentYear = todayISO < COURSE_START ? COURSE_START_YEAR : CY;
+  const duePaymentMonth = todayISO < COURSE_START ? parseInt(COURSE_START.slice(5,7)) : CM;
+  const validated = payments.filter(p=>p.year===duePaymentYear&&p.month===duePaymentMonth&&p.status==="validated").reduce((s,p)=>s+(p.amount||0),0);
+  const pendingCount = enrolledStudents.filter(s=>!payments.some(p=>p.student_id===s.id&&p.year===duePaymentYear&&p.month===duePaymentMonth&&p.status!=="pending")).length;
   const monthExpenses = expenses.filter(e=>e.year===CY&&e.month===CM).reduce((s,e)=>s+e.amount,0);
   const birthdaysToday = students.filter(p=>isBirthday(p.birthdate));
   const lowOccupancy = groups.filter(g=>effectiveRoster(g,profiles,extraEnrollments).length<3);
@@ -1389,14 +1431,15 @@ function CEODashboard({groups,profiles,payments,expenses,extraEnrollments}){
       <div className="row">
         <div className="col card"><div style={{fontSize:26,fontWeight:800}}>{totalStudents}</div><div style={{color:"var(--gris)"}}>Alumnos totales</div></div>
         <div className="col card"><div style={{fontSize:26,fontWeight:800}}>{occupancy}%</div><div style={{color:"var(--gris)"}}>Ocupación</div></div>
-        <div className="col card"><div style={{fontSize:26,fontWeight:800,color:"var(--verde)"}}>{validated}€</div><div style={{color:"var(--gris)"}}>Ingresos validados ({MN[CM]})</div></div>
+        <div className="col card"><div style={{fontSize:26,fontWeight:800,color:"var(--verde)"}}>{validated}€</div><div style={{color:"var(--gris)"}}>Ingresos validados ({MN[duePaymentMonth]})</div></div>
         <div className="col card"><div style={{fontSize:26,fontWeight:800,color:"var(--rojo)"}}>{monthExpenses}€</div><div style={{color:"var(--gris)"}}>Gastos ({MN[CM]})</div></div>
       </div>
       <div className="card" style={{marginTop:14}}>
         <h3 style={{marginTop:0}}>Alertas</h3>
-        {pendingCount>0 && <div className="badge badge-warn" style={{marginRight:8,marginBottom:6}}>{pendingCount} alumnos sin pago este mes</div>}
+        {pendingCount>0 && <div className="badge badge-warn" style={{marginRight:8,marginBottom:6}}>{pendingCount} alumnos matriculados sin pago de {MN[duePaymentMonth]}</div>}
+        {incompleteCount>0 && <div className="badge badge-bad" style={{marginRight:8,marginBottom:6}}>{incompleteCount} inscripciones sin completar (no han elegido clase)</div>}
         {lowOccupancy.length>0 && <div className="badge badge-bad" style={{marginBottom:6}}>{lowOccupancy.length} clases con baja ocupación</div>}
-        {pendingCount===0 && lowOccupancy.length===0 && <div style={{color:"var(--verde)"}}>Todo en orden ✓</div>}
+        {pendingCount===0 && incompleteCount===0 && lowOccupancy.length===0 && <div style={{color:"var(--verde)"}}>Todo en orden ✓</div>}
       </div>
     </div>
   );
@@ -1505,7 +1548,7 @@ function GroupsView({groups,profiles,extraEnrollments,reload}){
 function PaymentsView({profiles,payments,reload}){
   const [year,setYear] = useState(todayISO<COURSE_START ? parseInt(COURSE_START.slice(0,4)) : CY);
   const [month,setMonth] = useState(todayISO<COURSE_START ? parseInt(COURSE_START.slice(5,7)) : CM);
-  const students = profiles.filter(p=>p.role==="student");
+  const students = profiles.filter(p=>p.role==="student" && p.group_id);
   async function validate(studentId, filePath){
     let q = sb.from("payments").update({status:"validated",validated_date:todayISO}).eq("student_id",studentId);
     q = filePath ? q.eq("file_path",filePath) : q.eq("year",year).eq("month",month);
@@ -1522,13 +1565,13 @@ function PaymentsView({profiles,payments,reload}){
         <div className="col"><Field label="Mes"><select value={month} onChange={e=>setMonth(parseInt(e.target.value))}>{MN.slice(1).map((m,i)=><option key={m} value={i+1}>{m}</option>)}</select></Field></div>
         <div className="col"><Field label="Año"><select value={year} onChange={e=>setYear(parseInt(e.target.value))}>{[CY-1,CY,CY+1].map(y=><option key={y} value={y}>{y}</option>)}</select></Field></div>
       </div>
-      <table><thead><tr><th>Alumno</th><th>Cuota</th><th>Plan</th><th>Estado</th><th>Justificante</th><th></th></tr></thead>
+      <table><thead><tr><th>Alumno</th><th>Teléfono</th><th>Cuota</th><th>Plan</th><th>Estado</th><th>Justificante</th><th></th></tr></thead>
       <tbody>
         {students.map(s=>{
           const p = payments.find(pp=>pp.student_id===s.id&&pp.year===year&&pp.month===month);
           const planLabel = {monthly:"Mensual",quarterly:"Trimestral",annual:"Curso completo"}[s.payment_type]||"Mensual";
           return <tr key={s.id}>
-            <td>{s.display_name}</td><td>{s.fee}€</td><td>{planLabel}</td>
+            <td>{s.display_name}</td><td>{s.guardian_phone||"—"}</td><td>{s.fee}€</td><td>{planLabel}</td>
             <td>{p?.status==="validated"?<span className="badge badge-ok">Validado</span>:p?.status==="uploaded"?<span className="badge badge-warn">Subido</span>:<span className="badge badge-bad">Pendiente</span>}</td>
             <td>{p?.file_path && <a href="#" onClick={e=>{e.preventDefault();view(p.file_path);}}>Ver</a>}</td>
             <td>{p?.status==="uploaded" && <button className="btn-secondary" onClick={()=>validate(s.id,p.file_path)}>Validar{s.payment_type!=="monthly"?" (todos los meses)":""}</button>}</td>
