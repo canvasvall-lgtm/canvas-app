@@ -196,6 +196,11 @@ const CONDITIONS_TEXT = [
 ];
 const IBAN = "ES48 0182 1605 5802 0164 4508"; // BBVA Cuenta Negocios — titular: Laura Sanz
 
+// Suscripción flexible y bonos de clases (sin grupo fijo)
+const FLEX_MONTHLY_FEE = 60;
+const FLEX_MONTHLY_SESSIONS = 4;
+const BONO_PRICES = { bono5: {sessions:5, price:85}, bono10: {sessions:10, price:160} };
+
 // EmailJS — rellena estos 3 valores cuando tengas tu cuenta creada (emailjs.com)
 const EMAILJS_PUBLIC_KEY = "u8MI4wxwkid6PEkAM";
 const EMAILJS_SERVICE_ID = "service_canvasapp";
@@ -314,6 +319,38 @@ function BirthdayBanner({name}){
 }
 function Field({label,children}){
   return <div style={{marginBottom:12}}><label style={{display:"block",fontSize:13,fontWeight:700,color:"var(--gris)",marginBottom:5}}>{label}</label>{children}</div>;
+}
+function ConditionsAndPricingView(){
+  return (
+    <div>
+      <div className="card" style={{marginBottom:14}}>
+        <h3 style={{marginTop:0,color:"var(--azul-oscuro)"}}>💶 Cuotas y descuentos</h3>
+        <table><tbody>
+          <tr><td>Matrícula</td><td><b>{STANDARD_ENROLLMENT_FEE}€</b> (gratis si te inscribes en agosto)</td></tr>
+          <tr><td>Aforo por clase</td><td><b>{MAX} alumnos</b> (Aerografía: 6, por seguridad del material)</td></tr>
+          <tr><td>Varias clases a la vez</td><td><b>{Math.round(MULTI_CLASS_DISCOUNT*100)}% de descuento</b> sobre el total desde la 2ª clase</td></tr>
+          <tr><td>Pago trimestral</td><td><b>{Math.round(PLAN_DISCOUNT.quarterly*100)}% de descuento</b> — cubre el trimestre real del curso (sept-dic, ene-mar o abr-jun)</td></tr>
+          <tr><td>Pago del curso completo</td><td><b>{Math.round(PLAN_DISCOUNT.annual*100)}% de descuento</b> — cubre todo el curso (sept-jun)</td></tr>
+        </tbody></table>
+        <p style={{fontSize:12,color:"var(--gris)",marginTop:10}}>La cuota mensual concreta depende de la clase (varía entre clases infantiles, juveniles, adultos y talleres específicos como aerografía o acuarela).</p>
+      </div>
+      <div className="card" style={{marginBottom:14}}>
+        <h3 style={{marginTop:0,color:"var(--azul-oscuro)"}}>🔄 Suscripción flexible y bonos</h3>
+        <table><tbody>
+          <tr><td>Suscripción flexible</td><td><b>{FLEX_MONTHLY_FEE}€/mes</b> — {FLEX_MONTHLY_SESSIONS} clases al mes, reservando cada semana el día y hora que mejor venga (sin grupo fijo)</td></tr>
+          <tr><td>Bono de 5 clases</td><td><b>{BONO_PRICES.bono5.price}€</b> — válido hasta el final del curso, sin mensualidad</td></tr>
+          <tr><td>Bono de 10 clases</td><td><b>{BONO_PRICES.bono10.price}€</b> — válido hasta el final del curso, sin mensualidad</td></tr>
+        </tbody></table>
+        <p style={{fontSize:12,color:"var(--gris)",marginTop:10}}>Las reservas de suscripción flexible y bonos se hacen desde la pestaña "Recuperaciones" del perfil, hasta 3 horas antes de cada clase, según plazas disponibles.</p>
+      </div>
+      <div className="card">
+        <h3 style={{marginTop:0,color:"var(--azul-oscuro)"}}>📋 Condiciones de la academia</h3>
+        {CONDITIONS_TEXT.map(([title,body],i)=>(
+          <div key={i} style={{marginBottom:10,fontSize:14}}><b>{title}.</b> {body}</div>
+        ))}
+      </div>
+    </div>
+  );
 }
 function DateInputES({value,onChange}){
   // Guardamos día/mes/año en estado propio, para que cada selección quede visible
@@ -486,7 +523,7 @@ function RegisterForm({onBack}){
   const [emailDebug,setEmailDebug] = useState(null);
   const [f,setF] = useState({
     display_name:"", email:"", password:"", password2:"", group_id:"", birthdate:"", guardian_name:"", guardian_phone:"",
-    guardian_email:"", payment_type:"monthly", preferred_payment_method:"transferencia", privacy_consent:false,
+    guardian_email:"", payment_type:"monthly", preferred_payment_method:"transferencia", privacy_consent:false, enrollment_mode:"fixed",
     conditions_accepted:false, conditions_signature:""
   });
 
@@ -540,15 +577,19 @@ function RegisterForm({onBack}){
     if(!f.conditions_accepted || !f.conditions_signature.trim()){ setErr("Tienes que leer y firmar las condiciones de la academia para continuar."); return; }
     if(isMinor && !f.guardian_name.trim()){ setErr("Indica el nombre del adulto responsable."); return; }
     if(!f.guardian_phone.trim()){ setErr("Indica un teléfono de contacto."); return; }
-    if(!f.group_id){ setErr("Elige una clase."); return; }
-    const group = groups.find(g=>String(g.id)===String(f.group_id));
-    if(group && group.current_count >= capOf(group)){ setErr("Vaya, esa clase se acaba de completar. Elige otra, por favor."); return; }
+    const isFlex = f.enrollment_mode==="flex";
+    let group = null;
+    if(!isFlex){
+      if(!f.group_id){ setErr("Elige una clase."); return; }
+      group = groups.find(g=>String(g.id)===String(f.group_id));
+      if(group && group.current_count >= capOf(group)){ setErr("Vaya, esa clase se acaba de completar. Elige otra, por favor."); return; }
+    }
 
     setLoading(true);
-    const fee = group.fee;
+    const fee = isFlex ? FLEX_MONTHLY_FEE : group.fee;
     const enrollmentFee = isAugustNow ? 0 : STANDARD_ENROLLMENT_FEE;
     const { error: profileErr } = await sb.from("profiles").update({
-      group_id:group.id, fee, payment_type:f.payment_type,
+      group_id: isFlex ? null : group.id, fee, payment_type:f.payment_type, enrollment_mode:f.enrollment_mode,
       guardian_name: isMinor ? f.guardian_name : null, guardian_phone:f.guardian_phone, guardian_email:f.guardian_email,
       preferred_payment_method:f.preferred_payment_method,
       enrollment_fee: enrollmentFee, enrollment_fee_paid:false,
@@ -597,6 +638,9 @@ function RegisterForm({onBack}){
             <div className="col"><Field label="Repite la contraseña"><input type="password" required value={f.password2} onChange={e=>upd("password2",e.target.value)}/></Field></div>
           </div>
           <Field label="Fecha de nacimiento"><DateInputES value={f.birthdate} onChange={v=>upd("birthdate",v)}/></Field>
+          <div style={{background:"var(--fondo)",borderRadius:8,padding:10,fontSize:12,color:"var(--gris)",marginTop:-6,marginBottom:12}}>
+            ℹ️ Si estás inscribiendo a tu hijo/a: el <b>nombre</b> y la <b>fecha de nacimiento</b> de arriba son los de tu hijo/a, no los tuyos. El email y la contraseña sí pueden ser los tuyos (tú gestionas la cuenta) — luego te pediremos tu contacto como adulto responsable.
+          </div>
           {err && <div className="err">{err}</div>}
           <button className="btn-primary" style={{width:"100%"}} disabled={loading}>{loading?"Creando cuenta…":"Siguiente →"}</button>
         </form>
@@ -613,11 +657,37 @@ function RegisterForm({onBack}){
       <h2 style={{marginTop:0,color:"var(--azul-oscuro)"}}>Paso 2 · Tu clase y tus datos</h2>
       <p style={{fontSize:13,color:"var(--gris)",marginTop:-8}}>¡Cuenta creada, {f.display_name.split(" ")[0]}! Ahora elige tu clase.</p>
       <form onSubmit={submitDetails}>
+        <Field label="¿Cómo quieres inscribirte?">
+          <div className="row" style={{gap:10}}>
+            <div onClick={()=>upd("enrollment_mode","fixed")} style={{flex:1,cursor:"pointer",padding:12,borderRadius:10,border:`2px solid ${f.enrollment_mode==="fixed"?"var(--mostaza)":"#D8E3F5"}`,background:f.enrollment_mode==="fixed"?"#FFF3D6":"#fff"}}>
+              <div style={{fontWeight:700}}>📅 Grupo fijo</div>
+              <div style={{fontSize:12,color:"var(--gris)"}}>Mismo día y hora cada semana</div>
+            </div>
+            <div onClick={()=>upd("enrollment_mode","flex")} style={{flex:1,cursor:"pointer",padding:12,borderRadius:10,border:`2px solid ${f.enrollment_mode==="flex"?"var(--mostaza)":"#D8E3F5"}`,background:f.enrollment_mode==="flex"?"#FFF3D6":"#fff"}}>
+              <div style={{fontWeight:700}}>🔄 Suscripción flexible</div>
+              <div style={{fontSize:12,color:"var(--gris)"}}>{FLEX_MONTHLY_SESSIONS} clases/mes, tú eliges cada semana — {FLEX_MONTHLY_FEE}€/mes</div>
+            </div>
+          </div>
+        </Field>
+        {f.enrollment_mode==="flex" ? (
+          <div style={{background:"var(--fondo)",border:"2px solid var(--verde)",borderRadius:10,padding:14,marginBottom:12,fontSize:13}}>
+            <div style={{fontWeight:800,color:"var(--verde)",marginBottom:6}}>🔄 ¿Cómo funciona la suscripción flexible?</div>
+            <div style={{marginBottom:8}}>No te apuntas a una clase fija — pagas {FLEX_MONTHLY_FEE}€ al mes e incluye {FLEX_MONTHLY_SESSIONS} clases, para venir el día y la hora que mejor te venga cada semana.</div>
+            <div style={{fontWeight:700,marginBottom:4}}>Cada semana, tienes que:</div>
+            <ol style={{margin:"0 0 8px 18px",padding:0}}>
+              <li>Entrar en tu perfil → pestaña "Recuperaciones"</li>
+              <li>Elegir en el calendario la clase y el hueco que te venga bien esa semana</li>
+              <li>Reservar — hasta 3 horas antes de que empiece esa clase</li>
+            </ol>
+            <div>Si un mes no gastas tus {FLEX_MONTHLY_SESSIONS} clases, no se acumulan al mes siguiente. Puedes combinar disciplinas: no tienes por qué reservar siempre la misma.</div>
+          </div>
+        ) : (
         <Field label="Elige tu clase (toca sobre el horario)">
           <WeeklyTimetable groups={groups} profiles={[]} onSelect={g=>upd("group_id",g.id)} selectedId={f.group_id}/>
           {!f.group_id && <div style={{fontSize:12,color:"var(--gris)",marginTop:6}}>Toca una clase del horario de arriba para seleccionarla.</div>}
           {f.group_id && (()=>{const g=groups.find(gg=>String(gg.id)===String(f.group_id)); return g && <div className="ok" style={{marginTop:6}}>Has elegido: {g.name} · {DNF[g.day-1]} {g.time_start}-{g.time_end} · {g.teacher}</div>;})()}
         </Field>
+        )}
         {isMinor ? (
           <>
             <Field label="Nombre del adulto responsable"><input required value={f.guardian_name} onChange={e=>upd("guardian_name",e.target.value)}/></Field>
@@ -971,6 +1041,141 @@ function ClassNotesForStudent({groupIds,allGroups}){
   );
 }
 
+function FlexBookingPanel({profile,groups}){
+  const [bookings,setBookings] = useState([]);
+  const [allCancellations,setAllCancellations] = useState([]);
+  const [allBookings,setAllBookings] = useState([]);
+  const [passes,setPasses] = useState([]);
+  const [weekOffset,setWeekOffset] = useState(0);
+  const [selected,setSelected] = useState("");
+  const [useType,setUseType] = useState("flex"); // "flex" o el id de un bono concreto
+  const [msg,setMsg] = useState("");
+
+  function load(){
+    sb.from("session_bookings").select("*").eq("student_id",profile.id).is("cancelled_at",null).then(({data})=>setBookings(data||[]));
+    sb.from("session_cancellations").select("*").then(({data})=>setAllCancellations(data||[]));
+    sb.from("session_bookings").select("*").is("cancelled_at",null).then(({data})=>setAllBookings(data||[]));
+    sb.from("flex_passes").select("*").eq("student_id",profile.id).order("created_at").then(({data})=>setPasses(data||[]));
+  }
+  useEffect(load,[]);
+
+  const isFlex = profile.enrollment_mode==="flex";
+  const activePasses = passes.filter(p=>p.sessions_used<p.total_sessions && p.valid_until>=todayISO);
+  const flexUsedThisMonth = bookings.filter(b=>{
+    if(b.booking_type!=="flex") return false;
+    const d=new Date(b.session_date+"T00:00:00");
+    return d.getFullYear()===CY && d.getMonth()+1===CM;
+  }).length;
+  const flexRemaining = Math.max(0, FLEX_MONTHLY_SESSIONS - flexUsedThisMonth);
+
+  function spotsFor(g,date){
+    const cancelsThatDay = allCancellations.filter(c=>c.group_id===g.id && c.session_date===date).length;
+    const bookingsThatDay = allBookings.filter(b=>b.group_id===g.id && b.session_date===date).length;
+    return capOf(g) - (g.current_count||0) + cancelsThatDay - bookingsThatDay;
+  }
+
+  const weekDates = useMemo(()=>{
+    const base = todayISO < COURSE_START ? new Date(COURSE_START+"T00:00:00") : new Date(NOW);
+    base.setHours(0,0,0,0);
+    const dow = ((base.getDay()+6)%7);
+    const monday = new Date(base); monday.setDate(base.getDate() - dow + weekOffset*7);
+    return Array.from({length:5},(_,i)=>{ const d=new Date(monday); d.setDate(monday.getDate()+i); return toLocalISO(d); });
+  },[weekOffset]);
+
+  const sessionsByDate = useMemo(()=>{
+    const m = {};
+    weekDates.forEach((date,i)=>{
+      const dow = i+1;
+      if(!isSchoolDay(date)) return;
+      groups.forEach(g=>{
+        if(g.day!==dow) return;
+        if(hoursUntil(date,g.time_start)<3) return;
+        if(spotsFor(g,date)<=0) return;
+        (m[date]=m[date]||[]).push(g);
+      });
+    });
+    return m;
+  },[weekDates,groups,allCancellations,allBookings]);
+
+  const selectedInfo = useMemo(()=>{
+    if(!selected) return null;
+    const [gid,date] = selected.split("::");
+    const g = groups.find(gg=>String(gg.id)===gid);
+    return g ? {group:g,date} : null;
+  },[selected,groups]);
+
+  async function book(){
+    setMsg("");
+    if(!selectedInfo){ setMsg("Elige una sesión del calendario."); return; }
+    const row = { student_id:profile.id, group_id:selectedInfo.group.id, session_date:selectedInfo.date };
+    if(useType==="flex"){ row.booking_type="flex"; }
+    else { row.booking_type="bono"; row.flex_pass_id=parseInt(useType); }
+    const {error} = await sb.from("session_bookings").insert(row);
+    if(error) setMsg("❌ "+error.message);
+    else { setMsg("✅ ¡Reservado! Nos vemos en esa clase."); setSelected(""); load(); }
+  }
+
+  const firstDate = new Date(weekDates[0]+"T00:00:00");
+  const lastDate = new Date(weekDates[4]+"T00:00:00");
+
+  if(!isFlex && activePasses.length===0) return null;
+
+  return (
+    <div className="card" style={{marginBottom:14}}>
+      <h3 style={{marginTop:0}}>📅 Reservar clases</h3>
+      {isFlex && <p style={{fontSize:13,color:"var(--gris)"}}>Suscripción flexible: te quedan <b>{flexRemaining} de {FLEX_MONTHLY_SESSIONS}</b> clases este mes.</p>}
+      {activePasses.map(p=>(
+        <p key={p.id} style={{fontSize:13,color:"var(--gris)"}}>Bono {p.pass_type==="bono5"?"de 5":"de 10"}: te quedan <b>{p.total_sessions-p.sessions_used}</b> sesiones (caduca el {p.valid_until}).</p>
+      ))}
+
+      <Field label="¿Con qué quieres reservar?">
+        <select value={useType} onChange={e=>setUseType(e.target.value)}>
+          {isFlex && <option value="flex">Mi suscripción flexible ({flexRemaining} restantes)</option>}
+          {activePasses.map(p=><option key={p.id} value={p.id}>Bono {p.pass_type==="bono5"?"5":"10"} ({p.total_sessions-p.sessions_used} restantes)</option>)}
+        </select>
+      </Field>
+
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+        <button className="btn-ghost" style={{padding:"6px 12px"}} onClick={()=>setWeekOffset(w=>Math.max(0,w-1))} disabled={weekOffset===0}>← Semana anterior</button>
+        <div style={{fontWeight:700,color:"var(--azul-oscuro)",fontSize:13}}>{firstDate.getDate()}/{firstDate.getMonth()+1} – {lastDate.getDate()}/{lastDate.getMonth()+1}</div>
+        <button className="btn-ghost" style={{padding:"6px 12px"}} onClick={()=>setWeekOffset(w=>w+1)}>Semana siguiente →</button>
+      </div>
+
+      <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:8}}>
+        {weekDates.map((date,i)=>{
+          const d = new Date(date+"T00:00:00");
+          const closed = !isSchoolDay(date);
+          const sessionsThatDay = sessionsByDate[date]||[];
+          return (
+            <div key={date}>
+              <div style={{textAlign:"center",fontWeight:700,fontSize:12,color:"var(--azul-oscuro)",marginBottom:6,borderBottom:"2px solid var(--azul-claro)",paddingBottom:4}}>{DNF[i]}<br/>{d.getDate()}/{d.getMonth()+1}</div>
+              {closed && <div style={{fontSize:11,color:"var(--gris)",textAlign:"center"}}>Sin clase</div>}
+              {!closed && sessionsThatDay.length===0 && <div style={{fontSize:11,color:"var(--gris)",textAlign:"center"}}>—</div>}
+              {sessionsThatDay.map(g=>{
+                const key = g.id+"::"+date;
+                const sel = selected===key;
+                const spots = spotsFor(g,date);
+                return (
+                  <div key={key} onClick={()=>setSelected(key)} style={{cursor:"pointer",marginBottom:6,borderRadius:10,padding:"6px 8px",background:sel?"#FFF3D6":"#fff",border:`2px solid ${sel?"var(--mostaza)":classColor(g.name)}`,boxShadow:sel?"0 0 0 3px rgba(233,168,0,0.25)":"none"}}>
+                    <div style={{fontWeight:700,fontSize:12}}>{g.name}</div>
+                    <div style={{fontSize:11,color:classColor(g.name)}}>{g.teacher} · {g.time_start}</div>
+                    <div style={{fontSize:11,color:"var(--gris)"}}>{spots} hueco{spots!==1?"s":""}</div>
+                  </div>
+                );
+              })}
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="row" style={{marginTop:10}}>
+        <button className="btn-primary" disabled={!selectedInfo || (useType==="flex" && flexRemaining<=0)} onClick={book}>Reservar</button>
+      </div>
+      {msg && <div style={{marginTop:10,padding:"10px 12px",borderRadius:10,fontSize:13,fontWeight:600,background:msg.startsWith("❌")?"#FCE7E7":"#E4F7EC",color:msg.startsWith("❌")?"var(--rojo)":"var(--verde)"}}>{msg}</div>}
+    </div>
+  );
+}
+
 /* ============================================================
    VISTA ALUMNO
    ============================================================ */
@@ -1079,14 +1284,20 @@ function StudentApp({profile,onLogout}){
         <div className="tabs" style={{marginBottom:14}}>
           <div className={"tab "+(tab==="clase"?"active":"")} onClick={()=>setTab("clase")}>Mi clase</div>
           <div className={"tab "+(tab==="pagos"?"active":"")} onClick={()=>setTab("pagos")}>Pagos</div>
-          {myGroupIds.length>0 && <div className={"tab "+(tab==="recuperar"?"active":"")} onClick={()=>setTab("recuperar")}>Recuperaciones</div>}
+          {(myGroupIds.length>0 || profile.enrollment_mode==="flex") && <div className={"tab "+(tab==="recuperar"?"active":"")} onClick={()=>setTab("recuperar")}>Recuperaciones</div>}
           {myGroupIds.length>0 && <div className={"tab "+(tab==="avisos"?"active":"")} onClick={()=>setTab("avisos")}>Avisos</div>}
+          <div className={"tab "+(tab==="condiciones"?"active":"")} onClick={()=>setTab("condiciones")}>Condiciones</div>
         </div>
 
         {tab==="clase" && (
         <div className="card" style={{marginBottom:14}}>
           {group ? (
             <p>Tu clase: <b>{group.name}</b> — {DNF[group.day-1]} {group.time_start}-{group.time_end} con <b style={{color:classColor(group.name)}}>{group.teacher}</b></p>
+          ) : profile.enrollment_mode==="flex" ? (
+            <div style={{background:"#E4F7EC",border:"2px solid var(--verde)",borderRadius:10,padding:14,marginBottom:4}}>
+              <div style={{fontWeight:800,color:"var(--verde)",marginBottom:4}}>🔄 Suscripción flexible</div>
+              <div style={{fontSize:13}}>No tienes clase fija — reserva cada semana desde la pestaña "Recuperaciones", donde también verás tu calendario de reservas.</div>
+            </div>
           ) : (
             <div style={{background:"#FFF3D6",border:"2px solid var(--mostaza)",borderRadius:10,padding:14,marginBottom:4}}>
               <div style={{fontWeight:800,color:"#6a4b00",marginBottom:4}}>⚠️ Tu inscripción no está completa todavía</div>
@@ -1101,7 +1312,7 @@ function StudentApp({profile,onLogout}){
           ))}
           {(1+extraGroups.length)>=2 && <div className="badge badge-ok" style={{marginTop:8}}>5% de descuento aplicado por estar en {1+extraGroups.length} clases</div>}
           {profile.enrollment_fee>0 && !profile.enrollment_fee_paid && <div className="badge badge-warn" style={{marginTop:8}}>Matrícula pendiente: {profile.enrollment_fee}€</div>}
-          {!addingClass
+          {profile.enrollment_mode!=="flex" && (!addingClass
             ? <button className={myGroupIds.length===0?"btn-primary":"btn-ghost"} style={{marginTop:10}} onClick={()=>setAddingClass(true)}>{myGroupIds.length===0?"🎨 Elegir mi clase":"+ Añadir otra clase"}</button>
             : (
               <div style={{marginTop:10,background:"var(--fondo)",border:"2px solid var(--azul-claro)",borderRadius:12,padding:12}}>
@@ -1117,7 +1328,7 @@ function StudentApp({profile,onLogout}){
                 </div>
               </div>
             )
-          }
+          )}
         </div>
         )}
 
@@ -1125,13 +1336,18 @@ function StudentApp({profile,onLogout}){
           <MySessionsPanel profile={profile} groups={[group,...extraGroups].filter(Boolean)} allGroups={allGroups}/>
         }
 
-        {tab==="recuperar" && myGroupIds.length>0 &&
-          <RecoveryBookingPanel profile={profile} groups={allGroups} myGroupIds={myGroupIds}/>
-        }
+        {tab==="recuperar" && (
+          <>
+            <FlexBookingPanel profile={profile} groups={allGroups}/>
+            {myGroupIds.length>0 && <RecoveryBookingPanel profile={profile} groups={allGroups} myGroupIds={myGroupIds}/>}
+          </>
+        )}
 
         {tab==="avisos" && myGroupIds.length>0 &&
           <ClassNotesForStudent groupIds={myGroupIds} allGroups={allGroups}/>
         }
+
+        {tab==="condiciones" && <ConditionsAndPricingView/>}
 
         {tab==="pagos" && (
         <>
@@ -1322,6 +1538,7 @@ function TeacherApp({profile,onLogout}){
           <div className={"tab "+(tab==="mine"?"active":"")} onClick={()=>setTab("mine")}>Mis clases por día</div>
           <div className={"tab "+(tab==="all"?"active":"")} onClick={()=>setTab("all")}>Todas mis clases</div>
           <div className={"tab "+(tab==="hours"?"active":"")} onClick={()=>setTab("hours")}>Mis horas</div>
+          <div className={"tab "+(tab==="condiciones"?"active":"")} onClick={()=>setTab("condiciones")}>Condiciones</div>
         </div>
         {tab==="mine" && (
           <>
@@ -1344,6 +1561,7 @@ function TeacherApp({profile,onLogout}){
           <TeacherGroupCard key={g.id} group={g} profiles={profiles} extraEnrollments={extraEnrollments} showDay/>
         ))}
         {tab==="hours" && <MyHoursPanel teacherName={profile.teacher_name} groups={groups} attendance={attendance} rates={rates} tiers={tiers}/>}
+        {tab==="condiciones" && <ConditionsAndPricingView/>}
       </div>
       {session && <SessionModal group={session.group} date={session.date} profiles={profiles} extraEnrollments={extraEnrollments} onClose={()=>{setSession(null);load();}}/>}
     </div>
@@ -1408,9 +1626,10 @@ function TeacherGroupCard({group:g, profiles, extraEnrollments, onTakeAttendance
    ============================================================ */
 function CEODashboard({groups,profiles,payments,expenses,extraEnrollments}){
   const students = profiles.filter(p=>p.role==="student");
-  const enrolledStudents = students.filter(s=>s.group_id); // solo quien ya ha completado su inscripción
+  const enrolledStudents = students.filter(s=>s.group_id || s.enrollment_mode==="flex"); // solo quien ya ha completado su inscripción
   const incompleteCount = students.length - enrolledStudents.length;
-  const totalStudents = groups.reduce((s,g)=>s+effectiveRoster(g,profiles,extraEnrollments).length,0);
+  const flexStudentsCount = students.filter(s=>!s.group_id && s.enrollment_mode==="flex").length;
+  const totalStudents = groups.reduce((s,g)=>s+effectiveRoster(g,profiles,extraEnrollments).length,0) + flexStudentsCount;
   const occupancy = groups.length? Math.round(100*groups.reduce((s,g)=>s+Math.min(effectiveRoster(g,profiles,extraEnrollments).length,capOf(g)),0)/groups.reduce((s,g)=>s+capOf(g),0)) : 0;
   const duePaymentYear = todayISO < COURSE_START ? COURSE_START_YEAR : CY;
   const duePaymentMonth = todayISO < COURSE_START ? parseInt(COURSE_START.slice(5,7)) : CM;
@@ -1445,8 +1664,76 @@ function CEODashboard({groups,profiles,payments,expenses,extraEnrollments}){
   );
 }
 
-function StudentsDirectoryView({groups,profiles,extraEnrollments}){
+function StudentEditModal({p,onClose,onSaved}){
+  const [f,setF] = useState({
+    display_name:p.display_name||"", birthdate:p.birthdate||"",
+    guardian_name:p.guardian_name||"", guardian_phone:p.guardian_phone||"", guardian_email:p.guardian_email||""
+  });
+  const [saving,setSaving] = useState(false);
+  const [err,setErr] = useState("");
+  const [passes,setPasses] = useState([]);
+  const [newPassType,setNewPassType] = useState("bono5");
+  const age = f.birthdate ? ageFromBirthdate(f.birthdate) : null;
+  const isMinor = age!==null && age<18;
+
+  function loadPasses(){ sb.from("flex_passes").select("*").eq("student_id",p.id).order("created_at",{ascending:false}).then(({data})=>setPasses(data||[])); }
+  useEffect(loadPasses,[]);
+
+  async function save(){
+    setSaving(true); setErr("");
+    const {error} = await sb.from("profiles").update({
+      display_name:f.display_name.trim(), birthdate:f.birthdate||null,
+      guardian_name:f.guardian_name.trim()||null, guardian_phone:f.guardian_phone.trim()||null, guardian_email:f.guardian_email.trim()||null
+    }).eq("id",p.id);
+    setSaving(false);
+    if(error){ setErr(error.message); return; }
+    onSaved();
+  }
+  async function addPass(){
+    const info = BONO_PRICES[newPassType];
+    await sb.from("flex_passes").insert({
+      student_id:p.id, pass_type:newPassType, total_sessions:info.sessions,
+      valid_until:COURSE_END, price_paid:info.price
+    });
+    loadPasses();
+  }
+  return (
+    <div className="modal-bg" onClick={onClose}>
+      <div className="modal" onClick={e=>e.stopPropagation()}>
+        <h3 style={{marginTop:0}}>Editar datos de {p.display_name}</h3>
+        <Field label="Nombre completo del alumno/a"><input value={f.display_name} onChange={e=>setF({...f,display_name:e.target.value})}/></Field>
+        <Field label="Fecha de nacimiento del alumno/a"><DateInputES value={f.birthdate} onChange={v=>setF({...f,birthdate:v})}/></Field>
+        {age!==null && <p style={{fontSize:12,color:"var(--gris)",marginTop:-6}}>Edad calculada: {age} años {isMinor?"(menor de edad)":"(adulto)"}</p>}
+        <Field label="Nombre del adulto responsable (si es menor)"><input value={f.guardian_name} onChange={e=>setF({...f,guardian_name:e.target.value})}/></Field>
+        <Field label="Teléfono de contacto"><input value={f.guardian_phone} onChange={e=>setF({...f,guardian_phone:e.target.value})}/></Field>
+        <Field label="Email de contacto"><input value={f.guardian_email} onChange={e=>setF({...f,guardian_email:e.target.value})}/></Field>
+        {err && <div className="err">{err}</div>}
+        <div style={{background:"var(--fondo)",borderRadius:10,padding:10,marginTop:12,marginBottom:12}}>
+          <div style={{fontWeight:700,fontSize:13,marginBottom:6}}>Bonos de clases</div>
+          {passes.map(bp=>(
+            <div key={bp.id} style={{fontSize:12,marginBottom:4}}>
+              {bp.pass_type==="bono5"?"Bono 5":"Bono 10"} — {bp.sessions_used}/{bp.total_sessions} usadas · caduca {bp.valid_until}
+            </div>
+          ))}
+          {passes.length===0 && <div style={{fontSize:12,color:"var(--gris)"}}>Sin bonos activos.</div>}
+          <div className="row" style={{marginTop:8,gap:6}}>
+            <select value={newPassType} onChange={e=>setNewPassType(e.target.value)}>
+              <option value="bono5">Bono 5 sesiones (85€)</option>
+              <option value="bono10">Bono 10 sesiones (160€)</option>
+            </select>
+            <button className="btn-secondary" onClick={addPass}>+ Asignar bono</button>
+          </div>
+        </div>
+        <div className="row"><button className="btn-ghost" onClick={onClose}>Cancelar</button><button className="btn-primary" disabled={saving} onClick={save}>{saving?"Guardando…":"Guardar"}</button></div>
+      </div>
+    </div>
+  );
+}
+
+function StudentsDirectoryView({groups,profiles,extraEnrollments,reload}){
+  const [editing,setEditing] = useState(null);
   const sortedGroups = [...groups].sort((a,b)=> a.day-b.day || a.time_start.localeCompare(b.time_start));
+  const flexStudents = profiles.filter(p=>p.role==="student" && !p.group_id && p.enrollment_mode==="flex");
   function studentsOf(g){
     const names = effectiveRoster(g,profiles,extraEnrollments);
     return names.map(name=>{
@@ -1456,6 +1743,28 @@ function StudentsDirectoryView({groups,profiles,extraEnrollments}){
   }
   return (
     <div>
+      {flexStudents.length>0 && (
+        <div className="card" style={{marginBottom:12,borderLeft:"4px solid var(--verde)"}}>
+          <div style={{fontWeight:800,color:"var(--azul-oscuro)",marginBottom:8}}>🔄 Suscripción flexible ({flexStudents.length})</div>
+          <table>
+            <thead><tr><th>Alumno/a</th><th>Edad</th><th>Adulto responsable</th><th>Teléfono</th><th>Email</th><th></th></tr></thead>
+            <tbody>
+              {flexStudents.map(p=>{
+                const age = p.birthdate ? ageFromBirthdate(p.birthdate) : null;
+                return (
+                <tr key={p.id}>
+                  <td>{p.display_name}</td>
+                  <td>{age ?? "—"} {age!==null && age<18 && <span className="badge badge-warn" style={{marginLeft:4}}>menor</span>}</td>
+                  <td>{p.guardian_name || (age!==null && age<18 ? <span style={{color:"var(--rojo)"}}>falta</span> : "—")}</td>
+                  <td>{p.guardian_phone || <span style={{color:"var(--rojo)"}}>falta</span>}</td>
+                  <td>{p.email || p.guardian_email || "—"}</td>
+                  <td><button className="btn-ghost" style={{padding:"4px 10px",fontSize:12}} onClick={()=>setEditing(p)}>Editar</button></td>
+                </tr>
+              );})}
+            </tbody>
+          </table>
+        </div>
+      )}
       {sortedGroups.map(g=>{
         const students = studentsOf(g);
         if(students.length===0) return null;
@@ -1465,22 +1774,27 @@ function StudentsDirectoryView({groups,profiles,extraEnrollments}){
               {DNF[g.day-1]} {g.time_start}-{g.time_end} · {g.name} · {g.teacher} ({students.length}/{capOf(g)})
             </div>
             <table>
-              <thead><tr><th>Alumno/a</th><th>Edad</th><th>Teléfono</th><th>Email</th></tr></thead>
+              <thead><tr><th>Alumno/a</th><th>Edad</th><th>Adulto responsable</th><th>Teléfono</th><th>Email</th><th></th></tr></thead>
               <tbody>
-                {students.map(({name,p})=>(
+                {students.map(({name,p})=>{
+                  const age = p?.birthdate ? ageFromBirthdate(p.birthdate) : null;
+                  return (
                   <tr key={name}>
                     <td>{name}</td>
-                    <td>{p?.birthdate ? ageFromBirthdate(p.birthdate) : "—"}</td>
-                    <td>{p?.guardian_phone || "—"}</td>
+                    <td>{age ?? "—"} {age!==null && age<18 && <span className="badge badge-warn" style={{marginLeft:4}}>menor</span>}</td>
+                    <td>{p?.guardian_name || (age!==null && age<18 ? <span style={{color:"var(--rojo)"}}>falta</span> : "—")}</td>
+                    <td>{p?.guardian_phone || <span style={{color:"var(--rojo)"}}>falta</span>}</td>
                     <td>{p?.email || p?.guardian_email || "—"}</td>
+                    <td>{p && <button className="btn-ghost" style={{padding:"4px 10px",fontSize:12}} onClick={()=>setEditing(p)}>Editar</button>}</td>
                   </tr>
-                ))}
+                );})}
               </tbody>
             </table>
           </div>
         );
       })}
       {sortedGroups.every(g=>studentsOf(g).length===0) && <div className="empty">Todavía no hay alumnos inscritos en ninguna clase.</div>}
+      {editing && <StudentEditModal p={editing} onClose={()=>setEditing(null)} onSaved={()=>{setEditing(null); reload();}}/>}
     </div>
   );
 }
@@ -1548,7 +1862,7 @@ function GroupsView({groups,profiles,extraEnrollments,reload}){
 function PaymentsView({profiles,payments,reload}){
   const [year,setYear] = useState(todayISO<COURSE_START ? parseInt(COURSE_START.slice(0,4)) : CY);
   const [month,setMonth] = useState(todayISO<COURSE_START ? parseInt(COURSE_START.slice(5,7)) : CM);
-  const students = profiles.filter(p=>p.role==="student" && p.group_id);
+  const students = profiles.filter(p=>p.role==="student" && (p.group_id || p.enrollment_mode==="flex"));
   async function validate(studentId, filePath){
     let q = sb.from("payments").update({status:"validated",validated_date:todayISO}).eq("student_id",studentId);
     q = filePath ? q.eq("file_path",filePath) : q.eq("year",year).eq("month",month);
@@ -1805,7 +2119,7 @@ function CEOApp({profile,onLogout}){
 
   const tabs = [
     ["dashboard","Dashboard"],["groups","Clases"],["students","Alumnos"],["payments","Pagos"],["stats","Estadísticas"],
-    ["teacherpay","Pago profesoras"],["workshops","Talleres"],["vouchers","Bonos"],["expenses","Gastos"]
+    ["teacherpay","Pago profesoras"],["workshops","Talleres"],["vouchers","Bonos"],["expenses","Gastos"],["condiciones","Condiciones"]
   ];
 
   return (
@@ -1817,13 +2131,14 @@ function CEOApp({profile,onLogout}){
         </div>
         {tab==="dashboard" && <CEODashboard groups={groups} profiles={profiles} payments={payments} expenses={expenses} extraEnrollments={extraEnrollments}/>}
         {tab==="groups" && <GroupsView groups={groups} profiles={profiles} extraEnrollments={extraEnrollments} reload={load}/>}
-        {tab==="students" && <StudentsDirectoryView groups={groups} profiles={profiles} extraEnrollments={extraEnrollments}/>}
+        {tab==="students" && <StudentsDirectoryView groups={groups} profiles={profiles} extraEnrollments={extraEnrollments} reload={load}/>}
         {tab==="payments" && <PaymentsView profiles={profiles} payments={payments} reload={load}/>}
         {tab==="stats" && <StatsView groups={groups} profiles={profiles} attendance={attendance} extraEnrollments={extraEnrollments}/>}
         {tab==="teacherpay" && <TeacherPayView groups={groups} attendance={attendance} rates={rates} tiers={tiers}/>}
         {tab==="workshops" && <WorkshopsView/>}
         {tab==="vouchers" && <VouchersView/>}
         {tab==="expenses" && <ExpensesView expenses={expenses} reload={load}/>}
+        {tab==="condiciones" && <ConditionsAndPricingView/>}
       </div>
     </div>
   );
