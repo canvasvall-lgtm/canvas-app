@@ -757,7 +757,14 @@ function App(){
 
   useEffect(()=>{
     sb.auth.getSession().then(({data})=>setSession(data.session||null));
-    const {data:sub} = sb.auth.onAuthStateChange((_evt,sess)=>setSession(sess));
+    const {data:sub} = sb.auth.onAuthStateChange((evt,sess)=>{
+      // Un TOKEN_REFRESHED del mismo usuario no debe reiniciar la app (pasa solo, en segundo
+      // plano, y sin esto se veía como si la app "recargara" y te devolviera a la pantalla inicial).
+      setSession(prev=>{
+        if(prev && sess && evt==="TOKEN_REFRESHED" && prev.user?.id===sess.user?.id) return prev;
+        return sess;
+      });
+    });
     return ()=>sub.subscription.unsubscribe();
   },[]);
 
