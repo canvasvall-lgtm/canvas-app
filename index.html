@@ -3055,7 +3055,16 @@ function StudentApp({
     className: "container"
   }, isBirthday(profile.birthdate) && React.createElement(BirthdayBanner, {
     name: profile.display_name
-  }), reloadedWhileUploading && React.createElement("div", {
+  }), !profile.guardian_phone && React.createElement("div", {
+    className: "card",
+    style: {
+      marginBottom: 14,
+      background: "#FFF3D6",
+      border: "2px solid var(--mostaza)",
+      cursor: "pointer"
+    },
+    onClick: () => setTab("misdatos")
+  }, "⚠️ ", React.createElement("b", null, "Faltan algunos datos del perfil por rellenar"), " — toca aquí para completarlos en \"Mis datos\" (necesitamos un teléfono de contacto)."), reloadedWhileUploading && React.createElement("div", {
     className: "card",
     style: {
       marginBottom: 14,
@@ -3955,6 +3964,110 @@ function BarChart({
     }
   }, d.label))));
 }
+function EnrollmentChart({
+  data
+}) {
+  const max = Math.max(1, ...data.map(d => Math.max(d.activos, d.nuevos)));
+  return React.createElement("div", null, React.createElement("div", {
+    style: {
+      display: "flex",
+      alignItems: "flex-end",
+      gap: 10,
+      height: 130,
+      overflowX: "auto",
+      paddingTop: 6
+    }
+  }, data.map((d, i) => React.createElement("div", {
+    key: i,
+    style: {
+      display: "flex",
+      flexDirection: "column",
+      alignItems: "center",
+      minWidth: 50,
+      height: "100%",
+      justifyContent: "flex-end"
+    }
+  }, React.createElement("div", {
+    style: {
+      display: "flex",
+      alignItems: "flex-end",
+      gap: 4,
+      height: "100%"
+    }
+  }, React.createElement("div", {
+    style: {
+      display: "flex",
+      flexDirection: "column",
+      alignItems: "center",
+      justifyContent: "flex-end",
+      height: "100%"
+    }
+  }, React.createElement("div", {
+    style: {
+      fontSize: 10,
+      fontWeight: 700
+    }
+  }, d.activos), React.createElement("div", {
+    style: {
+      width: 16,
+      height: `${Math.max(3, d.activos / max * 85)}%`,
+      background: "var(--azul-oscuro)",
+      borderRadius: "3px 3px 0 0"
+    }
+  })), React.createElement("div", {
+    style: {
+      display: "flex",
+      flexDirection: "column",
+      alignItems: "center",
+      justifyContent: "flex-end",
+      height: "100%"
+    }
+  }, React.createElement("div", {
+    style: {
+      fontSize: 10,
+      fontWeight: 700
+    }
+  }, d.nuevos), React.createElement("div", {
+    style: {
+      width: 16,
+      height: `${Math.max(3, d.nuevos / max * 85)}%`,
+      background: "var(--mostaza)",
+      borderRadius: "3px 3px 0 0"
+    }
+  }))), React.createElement("div", {
+    style: {
+      fontSize: 10,
+      color: "var(--gris)",
+      marginTop: 4,
+      textAlign: "center"
+    }
+  }, d.label)))), React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 14,
+      fontSize: 12,
+      marginTop: 8
+    }
+  }, React.createElement("span", null, React.createElement("span", {
+    style: {
+      display: "inline-block",
+      width: 10,
+      height: 10,
+      background: "var(--azul-oscuro)",
+      borderRadius: 2,
+      marginRight: 4
+    }
+  }), "Alumnos activos (acumulado)"), React.createElement("span", null, React.createElement("span", {
+    style: {
+      display: "inline-block",
+      width: 10,
+      height: 10,
+      background: "var(--mostaza)",
+      borderRadius: 2,
+      marginRight: 4
+    }
+  }), "Altas nuevas ese mes")));
+}
 function IncomeExpenseChart({
   months,
   income,
@@ -4064,24 +4177,34 @@ function CEODashboard({
   const monthExpenses = expenses.filter(e => e.year === CY && e.month === CM).reduce((s, e) => s + e.amount, 0);
   const birthdaysToday = students.filter(p => isBirthday(p.birthdate));
   const lowOccupancy = groups.filter(g => effectiveRoster(g, profiles, extraEnrollments).length < 3);
-  const signupsChartData = useMemo(() => {
+  const enrollmentChartData = useMemo(() => {
     const arr = [];
-    for (let i = 5; i >= 0; i--) {
+    let cumulative = 0;
+    const monthsToShow = 6;
+    const startWindow = new Date(CY, CM - 1 - (monthsToShow - 1), 1);
+    const before = enrolledStudents.filter(s => {
+      if (!s.created_at) return false;
+      return new Date(s.created_at) < startWindow;
+    }).length;
+    cumulative = before;
+    for (let i = monthsToShow - 1; i >= 0; i--) {
       const d = new Date(CY, CM - 1 - i, 1);
       const y = d.getFullYear(),
         m = d.getMonth() + 1;
-      const count = students.filter(s => {
+      const nuevos = enrolledStudents.filter(s => {
         if (!s.created_at) return false;
         const cd = new Date(s.created_at);
         return cd.getFullYear() === y && cd.getMonth() + 1 === m;
       }).length;
+      cumulative += nuevos;
       arr.push({
         label: MN[m].slice(0, 3),
-        value: count
+        nuevos,
+        activos: cumulative
       });
     }
     return arr;
-  }, [students]);
+  }, [enrolledStudents]);
   const courseChartMonths = SCHOOL_MONTHS.map(m => MN[m.month].slice(0, 3) + " " + String(m.year).slice(2));
   const incomeByMonth = SCHOOL_MONTHS.map(m => payments.filter(p => p.year === m.year && p.month === m.month && p.status === "validated").reduce((s, p) => s + (p.amount || 0), 0));
   const expenseByMonth = SCHOOL_MONTHS.map(m => expenses.filter(e => e.year === m.year && e.month === m.month).reduce((s, e) => s + e.amount, 0));
@@ -4213,9 +4336,8 @@ function CEODashboard({
     style: {
       marginTop: 0
     }
-  }, "📈 Altas nuevas (últimos 6 meses)"), React.createElement(BarChart, {
-    data: signupsChartData,
-    color: "var(--azul-claro)"
+  }, "📈 Alumnos activos y altas nuevas (últimos 6 meses)"), React.createElement(EnrollmentChart, {
+    data: enrollmentChartData
   })), React.createElement("div", {
     className: "card",
     style: {
@@ -5416,10 +5538,27 @@ function MaterialsShopCEOView() {
     const {
       error
     } = await sb.storage.from("materials").upload(path, file);
-    if (!error) await sb.from("materials").update({
+    if (error) {
+      setUploadingPhoto(false);
+      alert("No se pudo subir la foto: " + error.message);
+      return;
+    }
+    const {
+      error: updErr
+    } = await sb.from("materials").update({
       photo_path: path
     }).eq("id", matId);
+    if (updErr) {
+      setUploadingPhoto(false);
+      alert("La foto se subió, pero no se pudo asociar al material: " + updErr.message);
+      return;
+    }
+    setEditingMat(prev => prev ? {
+      ...prev,
+      photo_path: path
+    } : prev);
     setUploadingPhoto(false);
+    alert("¡Foto subida correctamente!");
     load();
   }
   function photoUrl(path) {
