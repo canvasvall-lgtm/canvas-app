@@ -43,7 +43,8 @@
   .topbar{background:var(--azul-oscuro);color:#fff;padding:14px 16px;display:flex;justify-content:space-between;align-items:center;}
   .modal-bg{position:fixed;inset:0;background:rgba(30,42,58,.5);display:flex;align-items:center;justify-content:center;z-index:50;padding:16px;}
   .modal{background:#fff;border-radius:16px;padding:20px;max-width:520px;width:100%;max-height:88vh;overflow-y:auto;}
-  table{width:100%;border-collapse:collapse;font-size:14px;}
+  .table-wrap{width:100%;overflow-x:auto;}
+  table{width:100%;border-collapse:collapse;font-size:14px;min-width:480px;}
   th,td{padding:8px 6px;text-align:left;border-bottom:1px solid #EEF2F8;}
   th{color:var(--gris);font-size:12px;text-transform:uppercase;}
   .confetti{position:fixed;inset:0;pointer-events:none;overflow:hidden;z-index:40;}
@@ -173,6 +174,14 @@ function computePlanTotal(monthlyFee, planType, year, month){
   const discount = PLAN_DISCOUNT[planType]||0;
   return Math.round(monthlyFee*months.length*(1-discount)*100)/100;
 }
+function computeDueMonth(profile){
+  const courseAwareY = todayISO<COURSE_START ? COURSE_START_YEAR : CY;
+  const courseAwareM = todayISO<COURSE_START ? parseInt(COURSE_START.slice(5,7)) : CM;
+  if(!profile.enrollment_start_year) return {year:courseAwareY, month:courseAwareM};
+  const a = profile.enrollment_start_year*12 + profile.enrollment_start_month;
+  const b = courseAwareY*12 + courseAwareM;
+  return a>=b ? {year:profile.enrollment_start_year, month:profile.enrollment_start_month} : {year:courseAwareY, month:courseAwareM};
+}
 function isSchoolDay(dateStr){
   if(dateStr < COURSE_START || dateStr > COURSE_END) return false;
   return !SCHOOL_CLOSURES.some(c => dateStr>=c.start && dateStr<=c.end);
@@ -186,7 +195,7 @@ const CONDITIONS_TEXT = [
   ["Matrícula", "Se paga una única vez al darte de alta y no es reembolsable."],
   ["Cuota mensual", "Se paga por adelantado dentro de los primeros días de cada mes. No es reembolsable."],
   ["Recuperar clases", "Si no puedes asistir a tu clase, debes darte de baja de esa sesión concreta desde la app con al menos 5 horas de antelación — así tendrás derecho a recuperarla. Para recuperarla (o para canjear un bono regalo), puedes inscribirte en un hueco libre de otra clase hasta 3 horas antes de que empiece esa sesión. Solo se puede recuperar 1 clase al mes."],
-  ["Darte de baja de la academia", "Puedes darte de baja cuando quieras, pero debes avisarnos antes del día 1 del último mes al que vayas a asistir. Si avisas después, se cobrará ese mes igualmente."],
+  ["Darte de baja de la academia", "Puedes solicitar la baja cuando quieras desde tu perfil, pero siempre será efectiva a partir del mes siguiente — no se puede dar de baja el mes en curso, que se sigue cobrando igualmente."],
   ["Puntualidad", "Intenta llegar a tu hora — las entradas tardías interrumpen la clase de tus compañeros."],
   ["Materiales", "La academia proporciona lo básico (folios, lápices, pinturas...). El material específico de tu técnica corre por tu cuenta."],
   ["Cuidado del material", "Cualquier daño por mal uso de los materiales o el equipo de la academia será responsabilidad del alumno o su familia."],
@@ -429,6 +438,11 @@ function WeeklyTimetable({groups, profiles, onSelect, selectedId}){
                           <div style={{fontWeight:700,fontSize:13}}>{g.name}</div>
                           <div style={{fontSize:11,color:clr}}>{g.teacher} · {g.time_start}-{g.time_end}</div>
                           <div style={{fontSize:11,color: full? "var(--rojo)" : "var(--gris)"}}>{full?"Completa":`${count}/${cap} plazas`}</div>
+                          <div style={{display:"flex",gap:1,marginTop:3}}>
+                            {Array.from({length:cap},(_,i)=>(
+                              <div key={i} style={{flex:1,height:4,borderRadius:2,background: i<count ? (full?"var(--rojo)":clr) : "#E5EAF2"}}/>
+                            ))}
+                          </div>
                         </div>
                       );
                       return onSelect
@@ -520,6 +534,7 @@ function RegisterForm({onBack}){
   const [step,setStep] = useState("account"); // account | details | done
   const [err,setErr]=useState(""); const [loading,setLoading]=useState(false);
   const [uid,setUid] = useState(null);
+  const [firstMonthOverride,setFirstMonthOverride] = useState(null);
   const [emailDebug,setEmailDebug] = useState(null);
   const [f,setF] = useState({
     display_name:"", email:"", password:"", password2:"", group_id:"", birthdate:"", guardian_name:"", guardian_phone:"",
@@ -539,6 +554,7 @@ function RegisterForm({onBack}){
   const dueY = todayISO<COURSE_START ? COURSE_START_YEAR : CY;
   const dueM = todayISO<COURSE_START ? parseInt(COURSE_START.slice(5,7)) : CM;
   const isMinor = age===null || age < 18;
+  const isFlexSel = f.enrollment_mode==="flex";
 
   async function submitAccount(e){
     e.preventDefault(); setErr("");
@@ -588,11 +604,19 @@ function RegisterForm({onBack}){
     setLoading(true);
     const fee = isFlex ? FLEX_MONTHLY_FEE : group.fee;
     const enrollmentFee = isAugustNow ? 0 : STANDARD_ENROLLMENT_FEE;
+    let startY = dueY, startM = dueM;
+    if(!isFlex){
+      const gY = parseInt(group.start_date.slice(0,4)), gM = parseInt(group.start_date.slice(5,7));
+      const groupDefault = {year:gY,month:gM};
+      const chosen = firstMonthOverride || groupDefault;
+      startY = chosen.year; startM = chosen.month;
+    }
     const { error: profileErr } = await sb.from("profiles").update({
       group_id: isFlex ? null : group.id, fee, payment_type:f.payment_type, enrollment_mode:f.enrollment_mode,
       guardian_name: isMinor ? f.guardian_name : null, guardian_phone:f.guardian_phone, guardian_email:f.guardian_email,
       preferred_payment_method:f.preferred_payment_method,
       enrollment_fee: enrollmentFee, enrollment_fee_paid:false,
+      enrollment_start_year:startY, enrollment_start_month:startM,
       privacy_consent:true, privacy_consent_at: new Date().toISOString(),
       conditions_accepted:true, conditions_signature:f.conditions_signature.trim(), conditions_accepted_at: new Date().toISOString()
     }).eq("id", uid);
@@ -683,11 +707,26 @@ function RegisterForm({onBack}){
           </div>
         ) : (
         <Field label="Elige tu clase (toca sobre el horario)">
-          <WeeklyTimetable groups={groups} profiles={[]} onSelect={g=>upd("group_id",g.id)} selectedId={f.group_id}/>
+          <WeeklyTimetable groups={groups} profiles={[]} onSelect={g=>{upd("group_id",g.id); setFirstMonthOverride(null);}} selectedId={f.group_id}/>
           {!f.group_id && <div style={{fontSize:12,color:"var(--gris)",marginTop:6}}>Toca una clase del horario de arriba para seleccionarla.</div>}
-          {f.group_id && (()=>{const g=groups.find(gg=>String(gg.id)===String(f.group_id)); return g && <div className="ok" style={{marginTop:6}}>Has elegido: {g.name} · {DNF[g.day-1]} {g.time_start}-{g.time_end} · {g.teacher}</div>;})()}
+          {f.group_id && (()=>{const g=groups.find(gg=>String(gg.id)===String(f.group_id)); return g && <div className="ok" style={{marginTop:6}}>Has elegido: {g.name} · {DNF[g.day-1]} {g.time_start}-{g.time_end} · {g.teacher}{g.start_date>COURSE_START?` — empieza el ${g.start_date}`:""}</div>;})()}
         </Field>
         )}
+        {!isFlexSel && f.group_id && (()=>{
+          const g = groups.find(gg=>String(gg.id)===String(f.group_id));
+          if(!g) return null;
+          const gY = parseInt(g.start_date.slice(0,4)), gM = parseInt(g.start_date.slice(5,7));
+          const options = SCHOOL_MONTHS.filter(m=> m.year>gY || (m.year===gY && m.month>=gM));
+          const chosen = firstMonthOverride || options[0];
+          return (
+            <Field label="Tu primer mes de pago">
+              <select value={`${chosen.year}-${chosen.month}`} onChange={e=>{const [y,m]=e.target.value.split("-").map(Number); setFirstMonthOverride({year:y,month:m});}}>
+                {options.map(m=><option key={`${m.year}-${m.month}`} value={`${m.year}-${m.month}`}>{MN[m.month]} {m.year}</option>)}
+              </select>
+              {g.start_date>COURSE_START && <div style={{fontSize:12,color:"var(--gris)",marginTop:4}}>Esta clase empieza el {g.start_date}, así que tu primer pago no puede ser antes de {MN[gM]}.</div>}
+            </Field>
+          );
+        })()}
         {isMinor ? (
           <>
             <Field label="Nombre del adulto responsable"><input required value={f.guardian_name} onChange={e=>upd("guardian_name",e.target.value)}/></Field>
@@ -1024,6 +1063,90 @@ function CalendarInfoBanner(){
   return <div className="card" style={{marginBottom:14,fontSize:13,color:"var(--gris)",borderLeft:"4px solid var(--azul-claro)"}}>📅 {msg}</div>;
 }
 
+function WithdrawFromAcademyView({profile,group}){
+  const [requests,setRequests] = useState([]);
+  const [msg,setMsg] = useState("");
+  const [sending,setSending] = useState(false);
+
+  function load(){ sb.from("withdrawal_requests").select("*").eq("student_id",profile.id).order("requested_at",{ascending:false}).then(({data})=>setRequests(data||[])); }
+  useEffect(load,[]);
+
+  const pending = requests.find(r=>r.status==="pending");
+  let effY = CY, effM = CM+1;
+  if(effM>12){ effM=1; effY++; }
+
+  async function requestWithdrawal(){
+    if(!window.confirm(`¿Seguro que quieres darte de baja de CANVAS? Será efectiva a partir de ${MN[effM]} de ${effY} — ${MN[CM]} se sigue cobrando igualmente.`)) return;
+    setSending(true); setMsg("");
+    const {error} = await sb.from("withdrawal_requests").insert({
+      student_id:profile.id, group_id:profile.group_id, teacher_name:group?.teacher||null,
+      effective_year:effY, effective_month:effM
+    });
+    setSending(false);
+    if(error) setMsg("❌ "+error.message);
+    else { setMsg("✅ Baja solicitada. Le hemos avisado a dirección y a tu profesora."); load(); }
+  }
+
+  return (
+    <div className="card" style={{marginTop:14,borderLeft:"4px solid var(--rojo)"}}>
+      <h3 style={{marginTop:0}}>Darme de baja de CANVAS</h3>
+      {pending ? (
+        <div style={{background:"#FCE7E7",borderRadius:10,padding:12,fontSize:13}}>
+          Ya tienes una baja solicitada, efectiva a partir de <b>{MN[pending.effective_month]} de {pending.effective_year}</b>. {MN[CM]} se sigue cobrando con normalidad.
+        </div>
+      ) : (
+        <>
+          <p style={{fontSize:13,color:"var(--gris)"}}>La baja siempre es efectiva al mes siguiente — {MN[CM]} se cobrará igualmente. No se puede dar de baja el mes en curso.</p>
+          <button className="btn-danger" disabled={sending} onClick={requestWithdrawal}>Solicitar baja (efectiva desde {MN[effM]})</button>
+        </>
+      )}
+      {msg && <p style={{fontSize:13,marginTop:8}}>{msg}</p>}
+    </div>
+  );
+}
+
+function MyContactDataView({profile}){
+  const [f,setF] = useState({
+    guardian_name:profile.guardian_name||"", guardian_phone:profile.guardian_phone||"",
+    guardian_email:profile.guardian_email||"", preferred_payment_method:profile.preferred_payment_method||"transferencia"
+  });
+  const [saving,setSaving] = useState(false);
+  const [msg,setMsg] = useState("");
+  const age = profile.birthdate ? ageFromBirthdate(profile.birthdate) : null;
+  const isMinor = age!==null && age<18;
+
+  async function save(){
+    setSaving(true); setMsg("");
+    const {error} = await sb.from("profiles").update({
+      guardian_name: f.guardian_name.trim()||null,
+      guardian_phone: f.guardian_phone.trim(),
+      guardian_email: f.guardian_email.trim()||null,
+      preferred_payment_method: f.preferred_payment_method
+    }).eq("id",profile.id);
+    setSaving(false);
+    setMsg(error ? "❌ "+error.message : "✅ Datos actualizados.");
+  }
+
+  return (
+    <div className="card">
+      <h3 style={{marginTop:0}}>Mis datos de contacto</h3>
+      <p style={{fontSize:12,color:"var(--gris)",marginTop:-6}}>Tu nombre y fecha de nacimiento no se pueden cambiar aquí — si hay un error, escríbenos a la academia.</p>
+      {isMinor && <Field label="Nombre del adulto responsable"><input value={f.guardian_name} onChange={e=>setF({...f,guardian_name:e.target.value})}/></Field>}
+      <Field label={isMinor?"Teléfono del adulto responsable":"Tu teléfono de contacto"}><input value={f.guardian_phone} onChange={e=>setF({...f,guardian_phone:e.target.value})}/></Field>
+      <Field label="Email de contacto"><input value={f.guardian_email} onChange={e=>setF({...f,guardian_email:e.target.value})}/></Field>
+      <Field label="Forma de pago preferida">
+        <select value={f.preferred_payment_method} onChange={e=>setF({...f,preferred_payment_method:e.target.value})}>
+          <option value="transferencia">Transferencia</option>
+          <option value="efectivo">Efectivo</option>
+        </select>
+      </Field>
+      <p style={{fontSize:12,color:"var(--gris)"}}>Para cambiar la periodicidad de tu cuota (mensual/trimestral/curso completo), ve a la pestaña "Pagos".</p>
+      {msg && <p style={{fontSize:13}}>{msg}</p>}
+      <button className="btn-primary" disabled={saving} onClick={save}>{saving?"Guardando…":"Guardar cambios"}</button>
+    </div>
+  );
+}
+
 function ClassNotesForStudent({groupIds,allGroups}){
   const [notes,setNotes] = useState([]);
   useEffect(()=>{
@@ -1187,7 +1310,15 @@ function FlexBookingPanel({profile,groups}){
    VISTA ALUMNO
    ============================================================ */
 function StudentApp({profile,onLogout}){
-  const [tab,setTab] = useState("clase");
+  const [tab,setTabRaw] = useState(()=>sessionStorage.getItem("canvas_tab")||"clase");
+  function setTab(t){ setTabRaw(t); try{ sessionStorage.setItem("canvas_tab",t); }catch(e){} }
+  const [reloadedWhileUploading] = useState(()=>{
+    try{
+      const flag = sessionStorage.getItem("canvas_uploading_hint");
+      if(flag) sessionStorage.removeItem("canvas_uploading_hint");
+      return !!flag;
+    }catch(e){ return false; }
+  });
   const [group,setGroup] = useState(null);
   const [allGroups,setAllGroups] = useState([]);
   const [extraGroupIds,setExtraGroupIds] = useState([]); // ids de student_groups (para poder borrar)
@@ -1214,8 +1345,7 @@ function StudentApp({profile,onLogout}){
     sb.from("payments").select("*").eq("student_id",profile.id).order("year",{ascending:false}).order("month",{ascending:false}).then(({data})=>setPayments(data||[]));
   },[]);
 
-  const duePaymentYear = todayISO < COURSE_START ? parseInt(COURSE_START.slice(0,4)) : CY;
-  const duePaymentMonth = todayISO < COURSE_START ? parseInt(COURSE_START.slice(5,7)) : CM;
+  const {year:duePaymentYear, month:duePaymentMonth} = computeDueMonth(profile);
   const thisMonthPayment = payments.find(p=>p.year===duePaymentYear && p.month===duePaymentMonth);
   const myGroupIds = [profile.group_id, ...extraGroups.map(g=>g.id)].filter(Boolean);
   const monthlyFee = computeTotalFee([profile.fee, ...extraGroups.map(g=>g.fee)]);
@@ -1285,6 +1415,11 @@ function StudentApp({profile,onLogout}){
       <div className="topbar"><Logo size={30} dark={true}/><button className="btn-ghost" onClick={onLogout}>Salir</button></div>
       <div className="container">
         {isBirthday(profile.birthdate) && <BirthdayBanner name={profile.display_name}/>}
+        {reloadedWhileUploading && (
+          <div className="card" style={{marginBottom:14,background:"#FFF3D6",border:"2px solid var(--mostaza)"}}>
+            📱 Parece que tu móvil ha recargado la página justo al elegir el archivo — es algo del propio teléfono, no de tu cuenta. Ve a la pestaña <b>Pagos</b> y vuelve a intentarlo; normalmente funciona a la segunda.
+          </div>
+        )}
         <h2 style={{color:"var(--azul-oscuro)",marginBottom:10}}>¡Hola, {profile.display_name.split(" ")[0]}! 👋</h2>
         {myGroupIds.length>0 && <CalendarInfoBanner/>}
 
@@ -1293,6 +1428,7 @@ function StudentApp({profile,onLogout}){
           <div className={"tab "+(tab==="pagos"?"active":"")} onClick={()=>setTab("pagos")}>Pagos</div>
           {(myGroupIds.length>0 || profile.enrollment_mode==="flex") && <div className={"tab "+(tab==="recuperar"?"active":"")} onClick={()=>setTab("recuperar")}>Recuperaciones</div>}
           {myGroupIds.length>0 && <div className={"tab "+(tab==="avisos"?"active":"")} onClick={()=>setTab("avisos")}>Avisos</div>}
+          <div className={"tab "+(tab==="misdatos"?"active":"")} onClick={()=>setTab("misdatos")}>Mis datos</div>
           <div className={"tab "+(tab==="condiciones"?"active":"")} onClick={()=>setTab("condiciones")}>Condiciones</div>
         </div>
 
@@ -1343,6 +1479,10 @@ function StudentApp({profile,onLogout}){
           <MySessionsPanel profile={profile} groups={[group,...extraGroups].filter(Boolean)} allGroups={allGroups}/>
         }
 
+        {tab==="clase" && myGroupIds.length>0 &&
+          <WithdrawFromAcademyView profile={profile} group={group}/>
+        }
+
         {tab==="recuperar" && (
           <>
             <FlexBookingPanel profile={profile} groups={allGroups}/>
@@ -1353,6 +1493,8 @@ function StudentApp({profile,onLogout}){
         {tab==="avisos" && myGroupIds.length>0 &&
           <ClassNotesForStudent groupIds={myGroupIds} allGroups={allGroups}/>
         }
+
+        {tab==="misdatos" && <MyContactDataView profile={profile}/>}
 
         {tab==="condiciones" && <ConditionsAndPricingView/>}
 
@@ -1384,7 +1526,8 @@ function StudentApp({profile,onLogout}){
               : <span className="badge badge-bad">Pendiente</span>}
           <p style={{fontSize:14,marginTop:10}}>Cuota{hasDiscount?" (con 5% dto. por varias clases)":""}{planType!=="monthly"?` — plan ${planType==="quarterly"?"trimestral":"curso completo"}, cubre ${planMonths} meses`:""}: <b>{totalFee}€</b>. Transferencia al IBAN: <b>{IBAN}</b> (titular: Laura Sanz).</p>
           <p style={{fontSize:13,color:"var(--rojo)",marginTop:-4}}>⚠️ Importante: en el <b>concepto</b> de la transferencia pon el <b>nombre y apellidos completos</b> del alumno/a (<b>{profile.display_name}</b>), para poder diferenciarte de otras personas con el mismo nombre.</p>
-          <input type="file" accept="image/*,.pdf" onChange={e=>setFile(e.target.files[0])}/>
+          <input type="file" accept="image/*,.pdf" onClick={()=>{try{sessionStorage.setItem("canvas_uploading_hint","1");}catch(e){}}} onChange={e=>{try{sessionStorage.removeItem("canvas_uploading_hint");}catch(e){} setFile(e.target.files[0]);}}/>
+          <p style={{fontSize:11,color:"var(--gris)",marginTop:4}}>💡 En algunos móviles, el navegador puede recargarse solo al elegir la foto (no es un fallo de tu cuenta) — si te pasa, vuelve a intentarlo, normalmente funciona a la segunda. Elegir una foto ya existente de la galería (en vez de hacerla en el momento con la cámara) reduce que esto pase.</p>
           <button className="btn-primary" style={{marginTop:8}} onClick={upload} disabled={uploading}>{uploading?"Subiendo…":"Subir justificante"}</button>
           {msg && <p style={{fontSize:13,marginTop:6}}>{msg}</p>}
         </div>
@@ -1507,6 +1650,7 @@ function TeacherApp({profile,onLogout}){
   const [tiers,setTiers] = useState([]);
   const [session,setSession] = useState(null);
   const [selectedDate,setSelectedDate] = useState(todayISO<COURSE_START ? COURSE_START : todayISO);
+  const [withdrawals,setWithdrawals] = useState([]);
 
   function load(){
     sb.from("groups").select("*").order("day").then(({data})=>setGroups(data||[]));
@@ -1515,6 +1659,7 @@ function TeacherApp({profile,onLogout}){
     sb.from("attendance").select("*").then(({data})=>setAttendance(data||[]));
     sb.from("teacher_rates").select("*").then(({data})=>setRates(data||[]));
     sb.from("incentive_tiers").select("*").then(({data})=>setTiers(data||[]));
+    sb.from("withdrawal_requests").select("*").eq("status","pending").eq("teacher_name",profile.teacher_name).then(({data})=>setWithdrawals(data||[]));
   }
   useEffect(load,[]);
 
@@ -1539,6 +1684,14 @@ function TeacherApp({profile,onLogout}){
         {birthdaysToday.length>0 && (
           <div className="card" style={{marginBottom:14,borderLeft:"4px solid var(--mostaza)"}}>
             {birthdaysToday.map(b=><div key={b.id}>🎂 ¡Hoy es el cumpleaños de <b>{b.display_name}</b> ({ageFromBirthdate(b.birthdate)} años)!</div>)}
+          </div>
+        )}
+        {withdrawals.length>0 && (
+          <div className="card" style={{marginBottom:14,borderLeft:"4px solid var(--rojo)"}}>
+            {withdrawals.map(w=>{
+              const s = profiles.find(p=>p.id===w.student_id);
+              return <div key={w.id}>🔔 <b>{s?.display_name||"Un alumno/a"}</b> ha solicitado la baja, efectiva desde {MN[w.effective_month]} {w.effective_year}.</div>;
+            })}
           </div>
         )}
         <div className="tabs" style={{marginBottom:14}}>
@@ -1631,7 +1784,49 @@ function TeacherGroupCard({group:g, profiles, extraEnrollments, onTakeAttendance
 /* ============================================================
    VISTA CEO — DASHBOARD
    ============================================================ */
-function CEODashboard({groups,profiles,payments,expenses,extraEnrollments}){
+function BarChart({data,color="var(--azul-claro)"}){
+  const max = Math.max(1, ...data.map(d=>d.value));
+  return (
+    <div style={{display:"flex",alignItems:"flex-end",gap:8,height:130,overflowX:"auto",paddingTop:6}}>
+      {data.map((d,i)=>(
+        <div key={i} style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"flex-end",minWidth:38,height:"100%"}}>
+          <div style={{fontSize:11,fontWeight:700,marginBottom:3}}>{d.value}</div>
+          <div style={{width:20,height:`${Math.max(3,(d.value/max)*90)}%`,background:color,borderRadius:"4px 4px 0 0"}}/>
+          <div style={{fontSize:10,color:"var(--gris)",marginTop:4,textAlign:"center"}}>{d.label}</div>
+        </div>
+      ))}
+    </div>
+  );
+}
+function IncomeExpenseChart({months,income,expense}){
+  const max = Math.max(1, ...months.map((_,i)=>Math.max(income[i]||0,expense[i]||0)));
+  return (
+    <div>
+      <div style={{display:"flex",alignItems:"flex-end",gap:10,height:130,overflowX:"auto",paddingTop:6}}>
+        {months.map((label,i)=>(
+          <div key={i} style={{display:"flex",flexDirection:"column",alignItems:"center",minWidth:44,height:"100%",justifyContent:"flex-end"}}>
+            <div style={{display:"flex",alignItems:"flex-end",gap:3,height:"100%"}}>
+              <div style={{width:14,height:`${Math.max(3,((income[i]||0)/max)*90)}%`,background:"var(--verde)",borderRadius:"3px 3px 0 0"}}/>
+              <div style={{width:14,height:`${Math.max(3,((expense[i]||0)/max)*90)}%`,background:"var(--rojo)",borderRadius:"3px 3px 0 0"}}/>
+            </div>
+            <div style={{fontSize:10,color:"var(--gris)",marginTop:4,textAlign:"center"}}>{label}</div>
+          </div>
+        ))}
+      </div>
+      <div style={{display:"flex",gap:14,fontSize:12,marginTop:8}}>
+        <span><span style={{display:"inline-block",width:10,height:10,background:"var(--verde)",borderRadius:2,marginRight:4}}/>Ingresos</span>
+        <span><span style={{display:"inline-block",width:10,height:10,background:"var(--rojo)",borderRadius:2,marginRight:4}}/>Gastos</span>
+      </div>
+    </div>
+  );
+}
+
+function CEODashboard({groups,profiles,payments,expenses,extraEnrollments,withdrawals,reload}){
+  async function processWithdrawal(w){
+    if(!window.confirm("¿Confirmas que ya has procesado esta baja (quitado de su clase a partir del mes efectivo)? Esto solo marca el aviso como leído, no quita a nadie de su clase automáticamente — eso se hace desde Alumnos → Editar → Quitar de sus clases.")) return;
+    await sb.from("withdrawal_requests").update({status:"processed"}).eq("id",w.id);
+    reload();
+  }
   const students = profiles.filter(p=>p.role==="student");
   const enrolledStudents = students.filter(s=>s.group_id || s.enrollment_mode==="flex"); // solo quien ya ha completado su inscripción
   const incompleteCount = students.length - enrolledStudents.length;
@@ -1645,6 +1840,27 @@ function CEODashboard({groups,profiles,payments,expenses,extraEnrollments}){
   const monthExpenses = expenses.filter(e=>e.year===CY&&e.month===CM).reduce((s,e)=>s+e.amount,0);
   const birthdaysToday = students.filter(p=>isBirthday(p.birthdate));
   const lowOccupancy = groups.filter(g=>effectiveRoster(g,profiles,extraEnrollments).length<3);
+
+  // Altas nuevas por mes (últimos 6 meses reales, según fecha de creación de la cuenta)
+  const signupsChartData = useMemo(()=>{
+    const arr = [];
+    for(let i=5;i>=0;i--){
+      const d = new Date(CY, CM-1-i, 1);
+      const y = d.getFullYear(), m = d.getMonth()+1;
+      const count = students.filter(s=>{
+        if(!s.created_at) return false;
+        const cd = new Date(s.created_at);
+        return cd.getFullYear()===y && cd.getMonth()+1===m;
+      }).length;
+      arr.push({label:MN[m].slice(0,3), value:count});
+    }
+    return arr;
+  },[students]);
+
+  // Ingresos (validados) y gastos por mes, a lo largo del curso (sept-jun)
+  const courseChartMonths = SCHOOL_MONTHS.map(m=>MN[m.month].slice(0,3)+" "+String(m.year).slice(2));
+  const incomeByMonth = SCHOOL_MONTHS.map(m=>payments.filter(p=>p.year===m.year&&p.month===m.month&&p.status==="validated").reduce((s,p)=>s+(p.amount||0),0));
+  const expenseByMonth = SCHOOL_MONTHS.map(m=>expenses.filter(e=>e.year===m.year&&e.month===m.month).reduce((s,e)=>s+e.amount,0));
 
   return (
     <div>
@@ -1667,11 +1883,36 @@ function CEODashboard({groups,profiles,payments,expenses,extraEnrollments}){
         {lowOccupancy.length>0 && <div className="badge badge-bad" style={{marginBottom:6}}>{lowOccupancy.length} clases con baja ocupación</div>}
         {pendingCount===0 && incompleteCount===0 && lowOccupancy.length===0 && <div style={{color:"var(--verde)"}}>Todo en orden ✓</div>}
       </div>
+      {withdrawals && withdrawals.length>0 && (
+        <div className="card" style={{marginTop:14,borderLeft:"4px solid var(--rojo)"}}>
+          <h3 style={{marginTop:0}}>🔔 Bajas solicitadas ({withdrawals.length})</h3>
+          {withdrawals.map(w=>{
+            const s = profiles.find(p=>p.id===w.student_id);
+            return (
+              <div key={w.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 0",borderBottom:"1px solid #EEF2F8"}}>
+                <div style={{fontSize:13}}>
+                  <b>{s?.display_name||"Alumno/a"}</b> — efectiva desde {MN[w.effective_month]} {w.effective_year}
+                  {w.teacher_name && ` · profesora: ${w.teacher_name}`}
+                </div>
+                <button className="btn-ghost" style={{padding:"4px 10px",fontSize:12}} onClick={()=>processWithdrawal(w)}>Marcar gestionada</button>
+              </div>
+            );
+          })}
+        </div>
+      )}
+      <div className="card" style={{marginTop:14}}>
+        <h3 style={{marginTop:0}}>📈 Altas nuevas (últimos 6 meses)</h3>
+        <BarChart data={signupsChartData} color="var(--azul-claro)"/>
+      </div>
+      <div className="card" style={{marginTop:14}}>
+        <h3 style={{marginTop:0}}>💶 Ingresos y gastos por mes (curso sept-jun)</h3>
+        <IncomeExpenseChart months={courseChartMonths} income={incomeByMonth} expense={expenseByMonth}/>
+      </div>
     </div>
   );
 }
 
-function StudentEditModal({p,onClose,onSaved}){
+function StudentEditModal({p,onClose,onSaved,allGroups}){
   const [f,setF] = useState({
     display_name:p.display_name||"", birthdate:p.birthdate||"",
     guardian_name:p.guardian_name||"", guardian_phone:p.guardian_phone||"", guardian_email:p.guardian_email||""
@@ -1680,8 +1921,14 @@ function StudentEditModal({p,onClose,onSaved}){
   const [err,setErr] = useState("");
   const [passes,setPasses] = useState([]);
   const [newPassType,setNewPassType] = useState("bono5");
+  const [changingGroup,setChangingGroup] = useState(false);
+  const [newGroupChoice,setNewGroupChoice] = useState(null);
+  const [groupMsg,setGroupMsg] = useState("");
+  const [annualAmount,setAnnualAmount] = useState("");
+  const [annualMsg,setAnnualMsg] = useState("");
   const age = f.birthdate ? ageFromBirthdate(f.birthdate) : null;
   const isMinor = age!==null && age<18;
+  const currentGroup = (allGroups||[]).find(g=>g.id===p.group_id);
 
   function loadPasses(){ sb.from("flex_passes").select("*").eq("student_id",p.id).order("created_at",{ascending:false}).then(({data})=>setPasses(data||[])); }
   useEffect(loadPasses,[]);
@@ -1704,6 +1951,31 @@ function StudentEditModal({p,onClose,onSaved}){
     });
     loadPasses();
   }
+  async function confirmChangeGroup(){
+    if(!newGroupChoice) return;
+    const {error} = await sb.from("profiles").update({group_id:newGroupChoice.id, fee:newGroupChoice.fee}).eq("id",p.id);
+    if(error){ setGroupMsg(error.message); return; }
+    setGroupMsg("✅ Clase cambiada."); setChangingGroup(false); setNewGroupChoice(null);
+    onSaved();
+  }
+  async function removeFromClasses(){
+    if(!window.confirm(`¿Seguro que quieres quitar a ${p.display_name} de todas sus clases? Perderá su plaza (la cuenta y su historial siguen existiendo).`)) return;
+    await sb.from("student_groups").delete().eq("student_id",p.id);
+    await sb.from("profiles").update({group_id:null, enrollment_mode:"fixed"}).eq("id",p.id);
+    onSaved();
+  }
+  async function markAnnualPaid(){
+    const amount = parseFloat(annualAmount);
+    if(!amount || amount<=0){ setAnnualMsg("Indica el importe total pagado."); return; }
+    await sb.from("profiles").update({payment_type:"annual"}).eq("id",p.id);
+    const months = monthsForPlan("annual", COURSE_START_YEAR, 9);
+    const rows = months.map((m,i)=>({
+      student_id:p.id, year:m.year, month:m.month, status:"validated",
+      amount: i===0?amount:0, validated_date:todayISO, upload_date:todayISO, filename:"Pago manual (dirección)"
+    }));
+    const {error} = await sb.from("payments").upsert(rows,{onConflict:"student_id,year,month"});
+    setAnnualMsg(error? "❌ "+error.message : "✅ Curso completo marcado como pagado (sept-jun).");
+  }
   return (
     <div className="modal-bg" onClick={onClose}>
       <div className="modal" onClick={e=>e.stopPropagation()}>
@@ -1715,6 +1987,37 @@ function StudentEditModal({p,onClose,onSaved}){
         <Field label="Teléfono de contacto"><input value={f.guardian_phone} onChange={e=>setF({...f,guardian_phone:e.target.value})}/></Field>
         <Field label="Email de contacto"><input value={f.guardian_email} onChange={e=>setF({...f,guardian_email:e.target.value})}/></Field>
         {err && <div className="err">{err}</div>}
+
+        <div style={{background:"var(--fondo)",borderRadius:10,padding:10,marginTop:12,marginBottom:12}}>
+          <div style={{fontWeight:700,fontSize:13,marginBottom:6}}>Clase asignada</div>
+          <div style={{fontSize:13,marginBottom:8}}>{currentGroup ? `${currentGroup.name} · ${DNF[currentGroup.day-1]} ${currentGroup.time_start}-${currentGroup.time_end} · ${currentGroup.teacher}` : (p.enrollment_mode==="flex" ? "Suscripción flexible (sin grupo fijo)" : "Sin clase asignada")}</div>
+          {!changingGroup ? (
+            <div className="row" style={{gap:8}}>
+              <button className="btn-ghost" onClick={()=>setChangingGroup(true)}>Cambiar de clase</button>
+              {(p.group_id || p.enrollment_mode==="flex") && <button className="btn-danger" onClick={removeFromClasses}>Quitar de sus clases</button>}
+            </div>
+          ) : (
+            <div>
+              <WeeklyTimetable groups={(allGroups||[]).filter(g=>g.id!==p.group_id)} profiles={[]} onSelect={setNewGroupChoice} selectedId={newGroupChoice?.id}/>
+              {newGroupChoice && <div className="ok" style={{marginTop:6}}>Nueva clase: {newGroupChoice.name} · {DNF[newGroupChoice.day-1]} {newGroupChoice.time_start}-{newGroupChoice.time_end}</div>}
+              <div className="row" style={{marginTop:8}}>
+                <button className="btn-ghost" onClick={()=>{setChangingGroup(false); setNewGroupChoice(null);}}>Cancelar</button>
+                <button className="btn-primary" disabled={!newGroupChoice} onClick={confirmChangeGroup}>Confirmar cambio</button>
+              </div>
+            </div>
+          )}
+          {groupMsg && <p style={{fontSize:12,marginTop:6}}>{groupMsg}</p>}
+        </div>
+
+        <div style={{background:"var(--fondo)",borderRadius:10,padding:10,marginBottom:12}}>
+          <div style={{fontWeight:700,fontSize:13,marginBottom:6}}>Marcar curso completo como pagado (sept-jun)</div>
+          <div className="row" style={{gap:8}}>
+            <input style={{flex:1}} type="number" placeholder="Importe total pagado (€)" value={annualAmount} onChange={e=>setAnnualAmount(e.target.value)}/>
+            <button className="btn-secondary" onClick={markAnnualPaid}>Marcar pagado</button>
+          </div>
+          {annualMsg && <p style={{fontSize:12,marginTop:6}}>{annualMsg}</p>}
+        </div>
+
         <div style={{background:"var(--fondo)",borderRadius:10,padding:10,marginTop:12,marginBottom:12}}>
           <div style={{fontWeight:700,fontSize:13,marginBottom:6}}>Bonos de clases</div>
           {passes.map(bp=>(
@@ -1737,39 +2040,48 @@ function StudentEditModal({p,onClose,onSaved}){
   );
 }
 
+function StudentContactRow({name,p,onEdit}){
+  const age = p?.birthdate ? ageFromBirthdate(p.birthdate) : null;
+  const isMin = age!==null && age<18;
+  return (
+    <div style={{padding:"10px 0",borderBottom:"1px solid #EEF2F8"}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:8}}>
+        <div style={{fontWeight:700}}>{name} {isMin && <span className="badge badge-warn" style={{marginLeft:4}}>menor</span>}</div>
+        {p && <button className="btn-ghost" style={{padding:"4px 10px",fontSize:12,flexShrink:0}} onClick={()=>onEdit(p)}>Editar</button>}
+      </div>
+      <div style={{fontSize:13,color:"var(--gris)",marginTop:4,display:"grid",gridTemplateColumns:"auto 1fr",gap:"2px 8px"}}>
+        <span>Edad:</span><span>{age ?? "—"}</span>
+        {isMin && <><span>Adulto:</span><span>{p?.guardian_name || <span style={{color:"var(--rojo)"}}>falta</span>}</span></>}
+        <span>Tel.:</span><span>{p?.guardian_phone || <span style={{color:"var(--rojo)"}}>falta</span>}</span>
+        <span>Email:</span><span style={{wordBreak:"break-all"}}>{p?.email || p?.guardian_email || "—"}</span>
+      </div>
+    </div>
+  );
+}
+
 function StudentsDirectoryView({groups,profiles,extraEnrollments,reload}){
   const [editing,setEditing] = useState(null);
   const sortedGroups = [...groups].sort((a,b)=> a.day-b.day || a.time_start.localeCompare(b.time_start));
   const flexStudents = profiles.filter(p=>p.role==="student" && !p.group_id && p.enrollment_mode==="flex");
   function studentsOf(g){
-    const names = effectiveRoster(g,profiles,extraEnrollments);
-    return names.map(name=>{
-      const p = profiles.find(pp=>pp.display_name===name);
-      return {name, p};
-    });
+    // Emparejar por ID (fiable) en vez de por nombre (podía fallar por espacios/tildes/mayúsculas)
+    const direct = profiles.filter(p=>p.role==="student" && p.group_id===g.id);
+    const viaExtra = (extraEnrollments||[]).filter(e=>e.group_id===g.id)
+      .map(e=>profiles.find(p=>p.id===e.student_id)).filter(Boolean);
+    const accountStudents = [...direct, ...viaExtra];
+    const accountNames = new Set(accountStudents.map(p=>p.display_name));
+    const legacyNames = (g.students||[]).filter(n=>!accountNames.has(n));
+    return [
+      ...accountStudents.map(p=>({name:p.display_name, p})),
+      ...legacyNames.map(n=>({name:n, p:null}))
+    ];
   }
   return (
     <div>
       {flexStudents.length>0 && (
         <div className="card" style={{marginBottom:12,borderLeft:"4px solid var(--verde)"}}>
-          <div style={{fontWeight:800,color:"var(--azul-oscuro)",marginBottom:8}}>🔄 Suscripción flexible ({flexStudents.length})</div>
-          <table>
-            <thead><tr><th>Alumno/a</th><th>Edad</th><th>Adulto responsable</th><th>Teléfono</th><th>Email</th><th></th></tr></thead>
-            <tbody>
-              {flexStudents.map(p=>{
-                const age = p.birthdate ? ageFromBirthdate(p.birthdate) : null;
-                return (
-                <tr key={p.id}>
-                  <td>{p.display_name}</td>
-                  <td>{age ?? "—"} {age!==null && age<18 && <span className="badge badge-warn" style={{marginLeft:4}}>menor</span>}</td>
-                  <td>{p.guardian_name || (age!==null && age<18 ? <span style={{color:"var(--rojo)"}}>falta</span> : "—")}</td>
-                  <td>{p.guardian_phone || <span style={{color:"var(--rojo)"}}>falta</span>}</td>
-                  <td>{p.email || p.guardian_email || "—"}</td>
-                  <td><button className="btn-ghost" style={{padding:"4px 10px",fontSize:12}} onClick={()=>setEditing(p)}>Editar</button></td>
-                </tr>
-              );})}
-            </tbody>
-          </table>
+          <div style={{fontWeight:800,color:"var(--azul-oscuro)",marginBottom:4}}>🔄 Suscripción flexible ({flexStudents.length})</div>
+          {flexStudents.map(p=><StudentContactRow key={p.id} name={p.display_name} p={p} onEdit={setEditing}/>)}
         </div>
       )}
       {sortedGroups.map(g=>{
@@ -1777,31 +2089,15 @@ function StudentsDirectoryView({groups,profiles,extraEnrollments,reload}){
         if(students.length===0) return null;
         return (
           <div key={g.id} className="card" style={{marginBottom:12,borderLeft:`4px solid ${classColor(g.name)}`}}>
-            <div style={{fontWeight:800,color:"var(--azul-oscuro)",marginBottom:8}}>
+            <div style={{fontWeight:800,color:"var(--azul-oscuro)",marginBottom:4}}>
               {DNF[g.day-1]} {g.time_start}-{g.time_end} · {g.name} · {g.teacher} ({students.length}/{capOf(g)})
             </div>
-            <table>
-              <thead><tr><th>Alumno/a</th><th>Edad</th><th>Adulto responsable</th><th>Teléfono</th><th>Email</th><th></th></tr></thead>
-              <tbody>
-                {students.map(({name,p})=>{
-                  const age = p?.birthdate ? ageFromBirthdate(p.birthdate) : null;
-                  return (
-                  <tr key={name}>
-                    <td>{name}</td>
-                    <td>{age ?? "—"} {age!==null && age<18 && <span className="badge badge-warn" style={{marginLeft:4}}>menor</span>}</td>
-                    <td>{p?.guardian_name || (age!==null && age<18 ? <span style={{color:"var(--rojo)"}}>falta</span> : "—")}</td>
-                    <td>{p?.guardian_phone || <span style={{color:"var(--rojo)"}}>falta</span>}</td>
-                    <td>{p?.email || p?.guardian_email || "—"}</td>
-                    <td>{p && <button className="btn-ghost" style={{padding:"4px 10px",fontSize:12}} onClick={()=>setEditing(p)}>Editar</button>}</td>
-                  </tr>
-                );})}
-              </tbody>
-            </table>
+            {students.map(({name,p})=><StudentContactRow key={name} name={name} p={p} onEdit={setEditing}/>)}
           </div>
         );
       })}
-      {sortedGroups.every(g=>studentsOf(g).length===0) && <div className="empty">Todavía no hay alumnos inscritos en ninguna clase.</div>}
-      {editing && <StudentEditModal p={editing} onClose={()=>setEditing(null)} onSaved={()=>{setEditing(null); reload();}}/>}
+      {sortedGroups.every(g=>studentsOf(g).length===0) && flexStudents.length===0 && <div className="empty">Todavía no hay alumnos inscritos en ninguna clase.</div>}
+      {editing && <StudentEditModal p={editing} allGroups={groups} onClose={()=>setEditing(null)} onSaved={()=>{setEditing(null); reload();}}/>}
     </div>
   );
 }
@@ -1886,7 +2182,7 @@ function PaymentsView({profiles,payments,reload}){
         <div className="col"><Field label="Mes"><select value={month} onChange={e=>setMonth(parseInt(e.target.value))}>{MN.slice(1).map((m,i)=><option key={m} value={i+1}>{m}</option>)}</select></Field></div>
         <div className="col"><Field label="Año"><select value={year} onChange={e=>setYear(parseInt(e.target.value))}>{[CY-1,CY,CY+1].map(y=><option key={y} value={y}>{y}</option>)}</select></Field></div>
       </div>
-      <table><thead><tr><th>Alumno</th><th>Teléfono</th><th>Cuota</th><th>Plan</th><th>Estado</th><th>Justificante</th><th></th></tr></thead>
+      <div className="table-wrap"><table><thead><tr><th>Alumno</th><th>Teléfono</th><th>Cuota</th><th>Plan</th><th>Estado</th><th>Justificante</th><th></th></tr></thead>
       <tbody>
         {students.map(s=>{
           const p = payments.find(pp=>pp.student_id===s.id&&pp.year===year&&pp.month===month);
@@ -1898,7 +2194,7 @@ function PaymentsView({profiles,payments,reload}){
             <td>{p?.status==="uploaded" && <button className="btn-secondary" onClick={()=>validate(s.id,p.file_path)}>Validar{s.payment_type!=="monthly"?" (todos los meses)":""}</button>}</td>
           </tr>;
         })}
-      </tbody></table>
+      </tbody></table></div>
     </div>
   );
 }
@@ -1914,8 +2210,8 @@ function StatsView({groups,profiles,attendance,extraEnrollments}){
     return { pr: rows.filter(r=>r.status==="pr").length, ar: rows.filter(r=>r.status==="ar").length, ab: rows.filter(r=>r.status==="ab").length };
   }
   return (
-    <table><thead><tr><th>Alumno</th><th>Clase</th><th>Presencias</th><th>Recup.</th><th>Ausencias</th></tr></thead>
-    <tbody>{roster.map((r,i)=>{const c=counts(r.name);const total=c.pr+c.ar+c.ab;return <tr key={i}><td>{r.name}</td><td>{r.group}</td><td>{c.pr}</td><td>{c.ar}</td><td>{c.ab}{total>0 && ` (${Math.round(100*c.pr/total)}%)`}</td></tr>;})}</tbody></table>
+    <div className="table-wrap"><table><thead><tr><th>Alumno</th><th>Clase</th><th>Presencias</th><th>Recup.</th><th>Ausencias</th></tr></thead>
+    <tbody>{roster.map((r,i)=>{const c=counts(r.name);const total=c.pr+c.ar+c.ab;return <tr key={i}><td>{r.name}</td><td>{r.group}</td><td>{c.pr}</td><td>{c.ar}</td><td>{c.ab}{total>0 && ` (${Math.round(100*c.pr/total)}%)`}</td></tr>;})}</tbody></table></div>
   );
 }
 
@@ -2111,6 +2407,7 @@ function CEOApp({profile,onLogout}){
   const [rates,setRates] = useState([]);
   const [tiers,setTiers] = useState([]);
   const [extraEnrollments,setExtraEnrollments] = useState([]);
+  const [withdrawals,setWithdrawals] = useState([]);
 
   function load(){
     sb.from("groups").select("*").order("day").then(({data})=>setGroups(data||[]));
@@ -2121,6 +2418,7 @@ function CEOApp({profile,onLogout}){
     sb.from("teacher_rates").select("*").then(({data})=>setRates(data||[]));
     sb.from("incentive_tiers").select("*").then(({data})=>setTiers(data||[]));
     sb.from("student_groups").select("*").then(({data})=>setExtraEnrollments(data||[]));
+    sb.from("withdrawal_requests").select("*").eq("status","pending").then(({data})=>setWithdrawals(data||[]));
   }
   useEffect(load,[]);
 
@@ -2136,7 +2434,7 @@ function CEOApp({profile,onLogout}){
         <div className="tabs" style={{marginBottom:16}}>
           {tabs.map(([k,l])=><div key={k} className={"tab "+(tab===k?"active":"")} onClick={()=>setTab(k)}>{l}</div>)}
         </div>
-        {tab==="dashboard" && <CEODashboard groups={groups} profiles={profiles} payments={payments} expenses={expenses} extraEnrollments={extraEnrollments}/>}
+        {tab==="dashboard" && <CEODashboard groups={groups} profiles={profiles} payments={payments} expenses={expenses} extraEnrollments={extraEnrollments} withdrawals={withdrawals} reload={load}/>}
         {tab==="groups" && <GroupsView groups={groups} profiles={profiles} extraEnrollments={extraEnrollments} reload={load}/>}
         {tab==="students" && <StudentsDirectoryView groups={groups} profiles={profiles} extraEnrollments={extraEnrollments} reload={load}/>}
         {tab==="payments" && <PaymentsView profiles={profiles} payments={payments} reload={load}/>}
