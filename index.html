@@ -739,7 +739,13 @@ function WeeklyTimetable({
           fontSize: 11,
           color: clr
         }
-      }, g.teacher, " · ", g.time_start, "-", g.time_end), React.createElement("div", {
+      }, g.teacher, " · ", g.time_start, "-", g.time_end), g.level && React.createElement("div", {
+        style: {
+          fontSize: 10,
+          color: "var(--gris)",
+          fontWeight: 600
+        }
+      }, g.level), React.createElement("div", {
         style: {
           fontSize: 11,
           color: full ? "var(--rojo)" : "var(--gris)"
@@ -2023,6 +2029,8 @@ function MySessionsPanel({
 }) {
   const [cancellations, setCancellations] = useState([]);
   const [bookings, setBookings] = useState([]);
+  const [allCancellations, setAllCancellations] = useState([]);
+  const [allBookings, setAllBookings] = useState([]);
   const [msg, setMsg] = useState("");
   const occurrences = useMemo(() => {
     const list = [];
@@ -2048,6 +2056,12 @@ function MySessionsPanel({
     sb.from("session_bookings").select("*").eq("student_id", profile.id).is("cancelled_at", null).then(({
       data
     }) => setBookings(data || []));
+    sb.from("session_cancellations").select("*").then(({
+      data
+    }) => setAllCancellations(data || []));
+    sb.from("session_bookings").select("*").is("cancelled_at", null).then(({
+      data
+    }) => setAllBookings(data || []));
   }
   useEffect(load, [(groups || []).map(g => g.id).join(",")]);
   async function cancelSession(group, date) {
@@ -2062,6 +2076,24 @@ function MySessionsPanel({
     });
     if (error) setMsg(error.message);else {
       setMsg("Te has dado de baja de esa clase. Ya tienes derecho a recuperarla.");
+      load();
+    }
+  }
+  function canUndo(group, date) {
+    const cap = capOf(group);
+    const cancelsThatDate = allCancellations.filter(c => c.group_id === group.id && c.session_date === date).length;
+    const bookingsThatDate = allBookings.filter(b => b.group_id === group.id && b.session_date === date).length;
+    const availableIfRejoins = cap - (group.current_count || 0) - bookingsThatDate + (cancelsThatDate - 1);
+    return availableIfRejoins >= 0;
+  }
+  async function undoCancel(group, date) {
+    if (!window.confirm(`¿Volver a apuntarte a "${group.name}" el ${date}?`)) return;
+    setMsg("");
+    const {
+      error
+    } = await sb.from("session_cancellations").delete().eq("student_id", profile.id).eq("group_id", group.id).eq("session_date", date);
+    if (error) setMsg(error.message);else {
+      setMsg("¡Vuelves a estar apuntada a esa clase!");
       load();
     }
   }
@@ -2083,6 +2115,7 @@ function MySessionsPanel({
     const cancelled = type === "regular" && cancellations.some(c => c.session_date === date && c.group_id === group.id);
     const hrs = hoursUntil(date, group.time_start);
     const canCancel = type === "regular" && !cancelled && hrs >= 5;
+    const canReactivate = cancelled && hrs >= 24 && canUndo(group, date);
     return React.createElement("div", {
       key: group.id + "::" + date + "::" + type,
       style: {
@@ -2112,7 +2145,12 @@ function MySessionsPanel({
       disabled: !canCancel,
       onClick: () => cancelSession(group, date),
       title: !canCancel ? "Ya quedan menos de 5 horas" : ""
-    }, "Darme de baja"));
+    }, "Darme de baja"), cancelled && React.createElement("button", {
+      className: "btn-ghost",
+      disabled: !canReactivate,
+      onClick: () => undoCancel(group, date),
+      title: hrs < 24 ? "Ya queda menos de 1 día para la clase" : !canUndo(group, date) ? "Alguien ha ocupado ese hueco con una recuperación" : ""
+    }, "Volver a registrar mi asistencia"));
   }), msg && React.createElement("p", {
     className: "ok"
   }, msg));
@@ -2807,58 +2845,43 @@ function PaymentProgressCalendar({
 }) {
   return React.createElement("div", {
     style: {
-      display: "grid",
-      gridTemplateColumns: "repeat(5,1fr)",
-      gap: 8,
-      marginTop: 10
+      display: "flex",
+      gap: 3
     }
   }, SCHOOL_MONTHS.map(m => {
     const before = enrollStartYear && (m.year < enrollStartYear || m.year === enrollStartYear && m.month < enrollStartMonth);
+    const isPastOrCurrent = m.year < CY || m.year === CY && m.month <= CM;
     const p = payments.find(pp => pp.year === m.year && pp.month === m.month);
-    let icon, bg, border, txt;
+    let bg, txt;
     if (before) {
-      icon = "—";
-      bg = "#F4F6FA";
-      border = "#E2E8F0";
-      txt = "var(--gris)";
+      bg = "#E2E8F0";
+      txt = "#94A3B8";
     } else if (p?.status === "validated") {
-      icon = "✓";
-      bg = "#E4F7EC";
-      border = "var(--verde)";
-      txt = "var(--verde)";
-    } else if (p?.status === "uploaded") {
-      icon = "…";
-      bg = "#FFF3D6";
-      border = "var(--mostaza)";
-      txt = "#8a6400";
+      bg = "var(--verde)";
+      txt = "#fff";
+    } else if (isPastOrCurrent) {
+      bg = "var(--rojo)";
+      txt = "#fff";
     } else {
-      icon = "✗";
-      bg = "#FCE7E7";
-      border = "var(--rojo)";
-      txt = "var(--rojo)";
+      bg = "var(--mostaza)";
+      txt = "#fff";
     }
     return React.createElement("div", {
       key: m.year + "-" + m.month,
+      title: `${MN[m.month]} ${m.year}${p?.status === "validated" ? " · validado" : isPastOrCurrent && !before ? " · pendiente" : ""}`,
       style: {
-        textAlign: "center",
+        width: 22,
+        height: 22,
+        borderRadius: 6,
         background: bg,
-        border: `2px solid ${border}`,
-        borderRadius: 10,
-        padding: "8px 4px"
-      }
-    }, React.createElement("div", {
-      style: {
-        fontSize: 20,
+        color: txt,
+        fontSize: 9,
         fontWeight: 800,
-        color: txt
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center"
       }
-    }, icon), React.createElement("div", {
-      style: {
-        fontSize: 11,
-        color: "var(--gris)",
-        marginTop: 2
-      }
-    }, MN[m.month].slice(0, 3)));
+    }, MN[m.month].slice(0, 1).toUpperCase());
   }));
 }
 function MyContactDataView({
@@ -3943,11 +3966,79 @@ function StudentApp({
     style: {
       marginTop: 0
     }
-  }, "Progreso del curso (sept-jun)"), React.createElement(PaymentProgressCalendar, {
+  }, "Progreso del curso (sept-jun)"), React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 10,
+      fontSize: 11,
+      marginBottom: 10
+    }
+  }, React.createElement("span", null, React.createElement("span", {
+    style: {
+      display: "inline-block",
+      width: 12,
+      height: 12,
+      background: "var(--verde)",
+      borderRadius: 3,
+      marginRight: 3,
+      verticalAlign: "middle"
+    }
+  }), "Pagado"), React.createElement("span", null, React.createElement("span", {
+    style: {
+      display: "inline-block",
+      width: 12,
+      height: 12,
+      background: "var(--rojo)",
+      borderRadius: 3,
+      marginRight: 3,
+      verticalAlign: "middle"
+    }
+  }), "Falta"), React.createElement("span", null, React.createElement("span", {
+    style: {
+      display: "inline-block",
+      width: 12,
+      height: 12,
+      background: "var(--mostaza)",
+      borderRadius: 3,
+      marginRight: 3,
+      verticalAlign: "middle"
+    }
+  }), "Aún no toca")), React.createElement("div", {
+    style: {
+      marginBottom: familyMembers.length > 0 ? 12 : 0
+    }
+  }, React.createElement("div", {
+    style: {
+      fontSize: 13,
+      fontWeight: 700,
+      marginBottom: 4
+    }
+  }, profile.display_name.split(" ")[0], " (tú)"), React.createElement(PaymentProgressCalendar, {
     payments: payments,
     enrollStartYear: profile.enrollment_start_year,
     enrollStartMonth: profile.enrollment_start_month
-  })), React.createElement("div", {
+  })), familyMembers.map(fm => React.createElement("div", {
+    key: fm.id,
+    style: {
+      marginBottom: 8
+    }
+  }, React.createElement("div", {
+    style: {
+      fontSize: 13,
+      fontWeight: 700,
+      marginBottom: 4
+    }
+  }, fm.display_name), React.createElement(PaymentProgressCalendar, {
+    payments: payments,
+    enrollStartYear: profile.enrollment_start_year,
+    enrollStartMonth: profile.enrollment_start_month
+  }))), React.createElement("p", {
+    style: {
+      fontSize: 11,
+      color: "var(--gris)",
+      marginTop: 8
+    }
+  }, "Como pagáis juntos en un único justificante, el calendario es el mismo para toda la familia.")), React.createElement("div", {
     className: "card"
   }, React.createElement("h3", {
     style: {
@@ -4232,7 +4323,13 @@ function TeacherApp({
   profile,
   onLogout
 }) {
-  const [tab, setTab] = useState("mine");
+  const [tab, setTabRaw] = useState(() => sessionStorage.getItem("canvas_tab_teacher") || "mine");
+  function setTab(t) {
+    setTabRaw(t);
+    try {
+      sessionStorage.setItem("canvas_tab_teacher", t);
+    } catch (e) {}
+  }
   const [groups, setGroups] = useState([]);
   const [profiles, setProfiles] = useState([]);
   const [extraEnrollments, setExtraEnrollments] = useState([]);
@@ -5579,7 +5676,7 @@ function GroupsView({
       time_end: e.target.value
     })
   })))), React.createElement(Field, {
-    label: "Nivel/edad (opcional)"
+    label: "Edad / nivel (se muestra en el horario, ej: '4-6 años')"
   }, React.createElement("input", {
     value: editing.level || "",
     onChange: e => setEditing({
@@ -5626,9 +5723,137 @@ function GroupsView({
     onClick: () => save(editing)
   }, "Guardar")))));
 }
+function PaymentsOverviewByGroup({
+  groups,
+  profiles,
+  extraEnrollments,
+  familyMembers,
+  payments
+}) {
+  const pendingValidation = payments.filter(p => p.status === "uploaded");
+  const sortedGroups = [...groups].sort((a, b) => a.day - b.day || a.time_start.localeCompare(b.time_start));
+  const flexStudents = profiles.filter(p => p.role === "student" && !p.group_id && p.enrollment_mode === "flex");
+  function rowFor(name, p, paymentsOf) {
+    return React.createElement("div", {
+      key: name,
+      style: {
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        gap: 10,
+        padding: "6px 0",
+        borderBottom: "1px solid #EEF2F8"
+      }
+    }, React.createElement("span", {
+      style: {
+        fontSize: 13,
+        flexShrink: 0,
+        minWidth: 140
+      }
+    }, name), p ? React.createElement(PaymentProgressCalendar, {
+      payments: paymentsOf,
+      enrollStartYear: p.enrollment_start_year,
+      enrollStartMonth: p.enrollment_start_month
+    }) : React.createElement("span", {
+      style: {
+        fontSize: 12,
+        color: "var(--gris)"
+      }
+    }, "Sin cuenta en la app"));
+  }
+  return React.createElement("div", {
+    style: {
+      marginBottom: 20
+    }
+  }, pendingValidation.length > 0 && React.createElement("div", {
+    className: "card",
+    style: {
+      marginBottom: 14,
+      borderLeft: "4px solid var(--mostaza)",
+      background: "#FFF3D6"
+    }
+  }, "🔔 ", React.createElement("b", null, pendingValidation.length, " justificante", pendingValidation.length !== 1 ? "s" : "", " pendiente", pendingValidation.length !== 1 ? "s" : "", " de validar"), " — revísalos en la tabla de abajo."), React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 10,
+      fontSize: 12,
+      marginBottom: 10
+    }
+  }, React.createElement("span", null, React.createElement("span", {
+    style: {
+      display: "inline-block",
+      width: 14,
+      height: 14,
+      background: "var(--verde)",
+      borderRadius: 4,
+      marginRight: 4,
+      verticalAlign: "middle"
+    }
+  }), "Pagado"), React.createElement("span", null, React.createElement("span", {
+    style: {
+      display: "inline-block",
+      width: 14,
+      height: 14,
+      background: "var(--rojo)",
+      borderRadius: 4,
+      marginRight: 4,
+      verticalAlign: "middle"
+    }
+  }), "Debería estar pagado y falta"), React.createElement("span", null, React.createElement("span", {
+    style: {
+      display: "inline-block",
+      width: 14,
+      height: 14,
+      background: "var(--mostaza)",
+      borderRadius: 4,
+      marginRight: 4,
+      verticalAlign: "middle"
+    }
+  }), "Mes futuro")), flexStudents.length > 0 && React.createElement("div", {
+    className: "card",
+    style: {
+      marginBottom: 10,
+      borderLeft: "4px solid var(--verde)"
+    }
+  }, React.createElement("div", {
+    style: {
+      fontWeight: 800,
+      color: "var(--azul-oscuro)",
+      marginBottom: 4,
+      fontSize: 13
+    }
+  }, "🔄 Suscripción flexible"), flexStudents.map(p => rowFor(p.display_name, p, payments.filter(pp => pp.student_id === p.id)))), sortedGroups.map(g => {
+    const direct = profiles.filter(p => p.role === "student" && p.group_id === g.id);
+    const viaExtra = (extraEnrollments || []).filter(e => e.group_id === g.id).map(e => profiles.find(p => p.id === e.student_id)).filter(Boolean);
+    const viaFamily = (familyMembers || []).filter(f => f.group_id === g.id);
+    const accountStudents = [...direct, ...viaExtra];
+    if (accountStudents.length === 0 && viaFamily.length === 0) return null;
+    return React.createElement("div", {
+      key: g.id,
+      className: "card",
+      style: {
+        marginBottom: 10,
+        borderLeft: `4px solid ${classColor(g.name)}`
+      }
+    }, React.createElement("div", {
+      style: {
+        fontWeight: 800,
+        color: "var(--azul-oscuro)",
+        marginBottom: 4,
+        fontSize: 13
+      }
+    }, DNF[g.day - 1], " ", g.time_start, "-", g.time_end, " · ", g.name), accountStudents.map(p => rowFor(p.display_name, p, payments.filter(pp => pp.student_id === p.id))), viaFamily.map(fm => {
+      const parent = profiles.find(p => p.id === fm.parent_id);
+      return rowFor(fm.display_name + " (familiar)", parent, parent ? payments.filter(pp => pp.student_id === parent.id) : []);
+    }));
+  }));
+}
 function PaymentsView({
+  groups,
   profiles,
   payments,
+  extraEnrollments,
+  familyMembers,
   reload
 }) {
   const [year, setYear] = useState(todayISO < COURSE_START ? parseInt(COURSE_START.slice(0, 4)) : CY);
@@ -5665,7 +5890,17 @@ function PaymentsView({
     } = await sb.storage.from("receipts").createSignedUrl(path, 3600);
     if (data) window.open(data.signedUrl, "_blank");
   }
-  return React.createElement("div", null, React.createElement("div", {
+  return React.createElement("div", null, React.createElement(PaymentsOverviewByGroup, {
+    groups: groups,
+    profiles: profiles,
+    extraEnrollments: extraEnrollments,
+    familyMembers: familyMembers,
+    payments: payments
+  }), React.createElement("h3", {
+    style: {
+      marginTop: 0
+    }
+  }, "Validar por mes"), React.createElement("div", {
     className: "row",
     style: {
       marginBottom: 10,
@@ -5735,8 +5970,7 @@ function StatsView({
   profiles,
   attendance,
   extraEnrollments,
-  familyMembers,
-  payments
+  familyMembers
 }) {
   const roster = [];
   groups.forEach(g => effectiveRoster(g, profiles, extraEnrollments, familyMembers).forEach(name => roster.push({
@@ -5751,8 +5985,7 @@ function StatsView({
       ab: rows.filter(r => r.status === "ab").length
     };
   }
-  const enrolled = profiles.filter(p => p.role === "student" && (p.group_id || p.enrollment_mode === "flex"));
-  return React.createElement("div", null, React.createElement("div", {
+  return React.createElement("div", {
     className: "table-wrap"
   }, React.createElement("table", null, React.createElement("thead", null, React.createElement("tr", null, React.createElement("th", null, "Alumno"), React.createElement("th", null, "Clase"), React.createElement("th", null, "Presencias"), React.createElement("th", null, "Recup."), React.createElement("th", null, "Ausencias"))), React.createElement("tbody", null, roster.map((r, i) => {
     const c = counts(r.name);
@@ -5760,33 +5993,7 @@ function StatsView({
     return React.createElement("tr", {
       key: i
     }, React.createElement("td", null, r.name), React.createElement("td", null, r.group), React.createElement("td", null, c.pr), React.createElement("td", null, c.ar), React.createElement("td", null, c.ab, total > 0 && ` (${Math.round(100 * c.pr / total)}%)`));
-  })))), React.createElement("div", {
-    className: "card",
-    style: {
-      marginTop: 20
-    }
-  }, React.createElement("h3", {
-    style: {
-      marginTop: 0
-    }
-  }, "Progreso de pagos del curso (sept-jun)"), enrolled.map(s => React.createElement("div", {
-    key: s.id,
-    style: {
-      marginBottom: 16
-    }
-  }, React.createElement("div", {
-    style: {
-      fontWeight: 700,
-      fontSize: 14,
-      marginBottom: 4
-    }
-  }, s.display_name), React.createElement(PaymentProgressCalendar, {
-    payments: payments.filter(p => p.student_id === s.id),
-    enrollStartYear: s.enrollment_start_year,
-    enrollStartMonth: s.enrollment_start_month
-  }))), enrolled.length === 0 && React.createElement("div", {
-    className: "empty"
-  }, "Todavía no hay alumnos matriculados.")));
+  }))));
 }
 function hoursOfGroup(g) {
   const [h1, m1] = g.time_start.split(":").map(Number),
@@ -6883,7 +7090,13 @@ function CEOApp({
   profile,
   onLogout
 }) {
-  const [tab, setTab] = useState("dashboard");
+  const [tab, setTabRaw] = useState(() => sessionStorage.getItem("canvas_tab_ceo") || "dashboard");
+  function setTab(t) {
+    setTabRaw(t);
+    try {
+      sessionStorage.setItem("canvas_tab_ceo", t);
+    } catch (e) {}
+  }
   const [groups, setGroups] = useState([]);
   const [profiles, setProfiles] = useState([]);
   const [payments, setPayments] = useState([]);
@@ -6969,16 +7182,18 @@ function CEOApp({
     familyMembers: familyMembers,
     reload: load
   }), tab === "payments" && React.createElement(PaymentsView, {
+    groups: groups,
     profiles: profiles,
     payments: payments,
+    extraEnrollments: extraEnrollments,
+    familyMembers: familyMembers,
     reload: load
   }), tab === "stats" && React.createElement(StatsView, {
     groups: groups,
     profiles: profiles,
     attendance: attendance,
     extraEnrollments: extraEnrollments,
-    familyMembers: familyMembers,
-    payments: payments
+    familyMembers: familyMembers
   }), tab === "teacherpay" && React.createElement(TeacherPayView, {
     groups: groups,
     attendance: attendance,
