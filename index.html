@@ -5166,7 +5166,8 @@ function StudentEditModal({
     await sb.from("profiles").update({
       payment_type: "annual"
     }).eq("id", p.id);
-    const months = monthsForPlan("annual", COURSE_START_YEAR, 9);
+    const due = computeDueMonth(p);
+    const months = monthsForPlan("annual", due.year, due.month);
     const rows = months.map((m, i) => ({
       student_id: p.id,
       year: m.year,
@@ -5182,7 +5183,7 @@ function StudentEditModal({
     } = await sb.from("payments").upsert(rows, {
       onConflict: "student_id,year,month"
     });
-    setAnnualMsg(error ? "❌ " + error.message : "✅ Curso completo marcado como pagado (sept-jun).");
+    setAnnualMsg(error ? "❌ " + error.message : `✅ Curso completo marcado como pagado (${MN[due.month]}-jun).`);
   }
   return React.createElement("div", {
     className: "modal-bg",
@@ -5878,17 +5879,23 @@ function PaymentsView({
     reload();
   }
   async function markManual(s) {
-    if (!window.confirm(`¿Confirmas que ${s.display_name} ha pagado la cuota de ${MN[month]} ${year} (${s.fee}€), por WhatsApp/efectivo u otra vía fuera de la app?`)) return;
-    await sb.from("payments").upsert({
+    const due = computeDueMonth(s);
+    const planType = s.payment_type || "monthly";
+    const planMonths = monthsForPlan(planType, due.year, due.month);
+    const total = planType === "monthly" ? s.fee : computePlanTotal(s.fee, planType, due.year, due.month);
+    const label = planType === "monthly" ? `la cuota de ${MN[due.month]} ${due.year}` : `su plan ${planType === "quarterly" ? "trimestral" : "de curso completo"}, que cubre desde ${MN[due.month]} ${due.year} (${planMonths.length} meses)`;
+    if (!window.confirm(`¿Confirmas que ${s.display_name} ha pagado ${label} — total ${total}€ — por WhatsApp/efectivo u otra vía fuera de la app?`)) return;
+    const rows = planMonths.map((m, i) => ({
       student_id: s.id,
-      year,
-      month,
+      year: m.year,
+      month: m.month,
       status: "validated",
-      amount: s.fee,
+      amount: i === 0 ? total : 0,
       validated_date: todayISO,
       upload_date: todayISO,
       filename: "Pago manual (dirección)"
-    }, {
+    }));
+    await sb.from("payments").upsert(rows, {
       onConflict: "student_id,year,month"
     });
     reload();
