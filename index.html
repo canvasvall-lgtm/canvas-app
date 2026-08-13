@@ -3705,11 +3705,20 @@ function StudentApp({
     style: {
       marginBottom: 14
     }
-  }, group ? React.createElement("p", null, "Tu clase: ", React.createElement("b", null, group.name), " — ", DNF[group.day - 1], " ", group.time_start, "-", group.time_end, " con ", React.createElement("b", {
+  }, group ? React.createElement(React.Fragment, null, React.createElement("p", null, "Tu clase: ", React.createElement("b", null, group.name), " — ", DNF[group.day - 1], " ", group.time_start, "-", group.time_end, " con ", React.createElement("b", {
     style: {
       color: classColor(group.name)
     }
-  }, group.teacher)) : profile.enrollment_mode === "flex" ? React.createElement("div", {
+  }, group.teacher)), group.start_date > COURSE_START && React.createElement("div", {
+    style: {
+      background: "#E4F7EC",
+      border: "2px solid var(--verde)",
+      borderRadius: 10,
+      padding: 12,
+      marginTop: 8,
+      fontSize: 13
+    }
+  }, "📅 Esta clase concreta empieza el ", React.createElement("b", null, group.start_date), " (más tarde que el resto del curso) — tu primer pago es el de ", MN[profile.enrollment_start_month || parseInt(group.start_date.slice(5, 7))], ", no septiembre.")) : profile.enrollment_mode === "flex" ? React.createElement("div", {
     style: {
       background: "#E4F7EC",
       border: "2px solid var(--verde)",
