@@ -788,7 +788,8 @@ function PublicWorkshopsView({
   const [f, setF] = useState({
     student_name: "",
     phone: "",
-    payment_method: "transferencia"
+    payment_method: "transferencia",
+    voucherCode: ""
   });
   const [file, setFile] = useState(null);
   const [sending, setSending] = useState(false);
@@ -803,7 +804,8 @@ function PublicWorkshopsView({
     setF({
       student_name: "",
       phone: "",
-      payment_method: "transferencia"
+      payment_method: "transferencia",
+      voucherCode: ""
     });
     setFile(null);
     setMsg("");
@@ -815,6 +817,39 @@ function PublicWorkshopsView({
     }
     setSending(true);
     setMsg("");
+    if (f.payment_method === "bono") {
+      const {
+        data: v
+      } = await sb.from("gift_vouchers").select("*").eq("code", f.voucherCode.trim()).eq("paid", true).eq("redeemed", false).maybeSingle();
+      if (!v) {
+        setSending(false);
+        setMsg("❌ Ese código de bono no es válido o ya se ha canjeado.");
+        return;
+      }
+      const {
+        error
+      } = await sb.from("workshop_registrations").insert({
+        workshop_id: registering.id,
+        student_name: f.student_name.trim(),
+        phone: f.phone.trim(),
+        payment_method: "bono",
+        amount: registering.total_price,
+        status: "validated"
+      });
+      if (error) {
+        setSending(false);
+        setMsg("❌ " + error.message);
+        return;
+      }
+      await sb.from("gift_vouchers").update({
+        redeemed: true,
+        redeemed_by: f.student_name.trim(),
+        redeemed_at: todayISO
+      }).eq("id", v.id);
+      setSending(false);
+      setMsg("✅ ¡Bono canjeado e inscripción confirmada! Nos vemos en el taller.");
+      return;
+    }
     let filePath = null;
     if (f.payment_method === "transferencia" && file) {
       const path = `${registering.id}/${Date.now()}-${file.name}`;
@@ -933,7 +968,9 @@ function PublicWorkshopsView({
     value: "transferencia"
   }, "Transferencia (subo justificante)"), React.createElement("option", {
     value: "efectivo"
-  }, "Efectivo (pago en la academia)"))), f.payment_method === "transferencia" && React.createElement(React.Fragment, null, React.createElement("p", {
+  }, "Efectivo (pago en la academia)"), React.createElement("option", {
+    value: "bono"
+  }, "Tengo un bono regalo"))), f.payment_method === "transferencia" && React.createElement(React.Fragment, null, React.createElement("p", {
     style: {
       fontSize: 13
     }
@@ -941,6 +978,15 @@ function PublicWorkshopsView({
     type: "file",
     accept: "image/*,.pdf",
     onChange: e => setFile(e.target.files[0])
+  })), f.payment_method === "bono" && React.createElement(Field, {
+    label: "Código del bono regalo"
+  }, React.createElement("input", {
+    value: f.voucherCode,
+    onChange: e => setF({
+      ...f,
+      voucherCode: e.target.value
+    }),
+    placeholder: "CANVAS-1234"
   })), msg && React.createElement("p", {
     style: {
       fontSize: 13,
@@ -2164,7 +2210,6 @@ function RecoveryBookingPanel({
   const [bookings, setBookings] = useState([]);
   const [allCancellations, setAllCancellations] = useState([]);
   const [allBookings, setAllBookings] = useState([]);
-  const [voucherCode, setVoucherCode] = useState("");
   const [msg, setMsg] = useState("");
   const [weekOffset, setWeekOffset] = useState(0);
   function load() {
@@ -2270,41 +2315,6 @@ function RecoveryBookingPanel({
       setSelected("");
       load();
     }
-  }
-  async function redeemVoucher() {
-    setMsg("");
-    if (!selectedInfo) {
-      setMsg("Elige una sesión del calendario.");
-      return;
-    }
-    const {
-      data: v
-    } = await sb.from("gift_vouchers").select("*").eq("code", voucherCode.trim()).eq("paid", true).eq("redeemed", false).maybeSingle();
-    if (!v) {
-      setMsg("Ese código de bono no es válido o ya se ha canjeado.");
-      return;
-    }
-    const {
-      error
-    } = await sb.from("session_bookings").insert({
-      student_id: profile.id,
-      group_id: selectedInfo.group.id,
-      session_date: selectedInfo.date,
-      booking_type: "voucher",
-      voucher_id: v.id
-    });
-    if (error) {
-      setMsg(error.message);
-      return;
-    }
-    await sb.from("gift_vouchers").update({
-      redeemed: true,
-      redeemed_by: profile.display_name,
-      redeemed_at: todayISO
-    }).eq("id", v.id);
-    setMsg("¡Bono canjeado y clase reservada!");
-    setVoucherCode("");
-    load();
   }
   const firstDate = new Date(weekDates[0] + "T00:00:00");
   const lastDate = new Date(weekDates[4] + "T00:00:00");
@@ -2433,25 +2443,7 @@ function RecoveryBookingPanel({
       fontSize: 12,
       color: "var(--rojo)"
     }
-  }, "No te queda ningún crédito de recuperación para el mes de esa sesión."), React.createElement(Field, {
-    label: "Código de bono regalo"
-  }, React.createElement("div", {
-    className: "row",
-    style: {
-      gap: 8
-    }
-  }, React.createElement("input", {
-    style: {
-      flex: 1
-    },
-    value: voucherCode,
-    onChange: e => setVoucherCode(e.target.value),
-    placeholder: "CANVAS-1234"
-  }), React.createElement("button", {
-    className: "btn-primary",
-    disabled: !selectedInfo,
-    onClick: redeemVoucher
-  }, "Canjear y reservar"))), msg && React.createElement("div", {
+  }, "No te queda ningún crédito de recuperación para el mes de esa sesión."), msg && React.createElement("div", {
     style: {
       marginTop: 10,
       padding: "10px 12px",
@@ -3023,6 +3015,155 @@ function ClassNotesForStudent({
     }, g ? g.name + " · " : "", n.teacher_name, " · ", new Date(n.created_at).toLocaleString("es-ES")));
   }));
 }
+function BuyBonoView({
+  profile
+}) {
+  const [myPasses, setMyPasses] = useState([]);
+  const [buying, setBuying] = useState(false);
+  const [passType, setPassType] = useState("bono5");
+  const [payMethod, setPayMethod] = useState("transferencia");
+  const [file, setFile] = useState(null);
+  const [sending, setSending] = useState(false);
+  const [msg, setMsg] = useState("");
+  function load() {
+    sb.from("flex_passes").select("*").eq("student_id", profile.id).order("created_at", {
+      ascending: false
+    }).then(({
+      data
+    }) => setMyPasses(data || []));
+  }
+  useEffect(load, []);
+  const hasPending = myPasses.some(p => p.status !== "validated");
+  async function submitPurchase() {
+    setSending(true);
+    setMsg("");
+    const info = BONO_PRICES[passType];
+    let filePath = null;
+    if (payMethod === "transferencia" && file) {
+      const path = `${profile.id}/${Date.now()}-bono-${file.name}`;
+      const {
+        error: upErr
+      } = await sb.storage.from("receipts").upload(path, file);
+      if (upErr) {
+        setSending(false);
+        setMsg("❌ " + upErr.message);
+        return;
+      }
+      filePath = path;
+    }
+    const {
+      error
+    } = await sb.from("flex_passes").insert({
+      student_id: profile.id,
+      pass_type: passType,
+      total_sessions: info.sessions,
+      valid_until: COURSE_END,
+      price_paid: info.price,
+      payment_method: payMethod,
+      file_path: filePath,
+      status: filePath ? "uploaded" : "pending"
+    });
+    setSending(false);
+    if (error) {
+      setMsg("❌ " + error.message);
+      return;
+    }
+    setMsg("✅ ¡Solicitud registrada! En cuanto dirección confirme tu pago, podrás usar tu bono.");
+    setBuying(false);
+    setFile(null);
+    load();
+  }
+  return React.createElement("div", {
+    className: "card",
+    style: {
+      marginBottom: 14
+    }
+  }, React.createElement("h3", {
+    style: {
+      marginTop: 0
+    }
+  }, "🎟️ Bonos de clases"), myPasses.map(p => React.createElement("div", {
+    key: p.id,
+    style: {
+      padding: "8px 0",
+      borderBottom: "1px solid #EEF2F8",
+      fontSize: 13,
+      display: "flex",
+      justifyContent: "space-between"
+    }
+  }, React.createElement("span", null, p.pass_type === "bono5" ? "Bono 5 sesiones" : "Bono 10 sesiones", " — ", p.sessions_used, "/", p.total_sessions, " usadas · caduca ", p.valid_until), p.status === "validated" ? React.createElement("span", {
+    className: "badge badge-ok"
+  }, "Activo") : p.status === "uploaded" ? React.createElement("span", {
+    className: "badge badge-warn"
+  }, "Pendiente de validar") : React.createElement("span", {
+    className: "badge badge-bad"
+  }, "Pendiente de pago"))), !buying ? React.createElement("button", {
+    className: "btn-ghost",
+    style: {
+      marginTop: 10
+    },
+    disabled: hasPending,
+    onClick: () => setBuying(true)
+  }, hasPending ? "Ya tienes un bono en proceso" : "+ Comprar un bono") : React.createElement("div", {
+    style: {
+      marginTop: 10,
+      background: "var(--fondo)",
+      borderRadius: 10,
+      padding: 12
+    }
+  }, React.createElement(Field, {
+    label: "Tipo de bono"
+  }, React.createElement("select", {
+    value: passType,
+    onChange: e => setPassType(e.target.value)
+  }, React.createElement("option", {
+    value: "bono5"
+  }, "Bono 5 sesiones (", BONO_PRICES.bono5.price, "€)"), React.createElement("option", {
+    value: "bono10"
+  }, "Bono 10 sesiones (", BONO_PRICES.bono10.price, "€)"))), React.createElement(Field, {
+    label: "Forma de pago"
+  }, React.createElement("select", {
+    value: payMethod,
+    onChange: e => setPayMethod(e.target.value)
+  }, React.createElement("option", {
+    value: "transferencia"
+  }, "Transferencia (subo justificante)"), React.createElement("option", {
+    value: "efectivo"
+  }, "Efectivo (pago en la academia)"))), payMethod === "transferencia" && React.createElement(React.Fragment, null, React.createElement("p", {
+    style: {
+      fontSize: 13
+    }
+  }, "IBAN: ", React.createElement("b", null, IBAN), " (titular: Laura Sanz) — concepto: bono + tu nombre completo."), React.createElement("input", {
+    type: "file",
+    accept: "image/*,.pdf",
+    onChange: e => setFile(e.target.files[0])
+  })), msg && React.createElement("p", {
+    style: {
+      fontSize: 13,
+      marginTop: 8
+    }
+  }, msg), React.createElement("div", {
+    className: "row",
+    style: {
+      marginTop: 10
+    }
+  }, React.createElement("button", {
+    className: "btn-ghost",
+    onClick: () => {
+      setBuying(false);
+      setMsg("");
+    }
+  }, "Cancelar"), React.createElement("button", {
+    className: "btn-primary",
+    disabled: sending,
+    onClick: submitPurchase
+  }, sending ? "Guardando…" : "Confirmar compra"))), msg && !buying && React.createElement("p", {
+    style: {
+      fontSize: 13,
+      marginTop: 8
+    }
+  }, msg));
+}
 function FlexBookingPanel({
   profile,
   groups
@@ -3051,7 +3192,7 @@ function FlexBookingPanel({
   }
   useEffect(load, []);
   const isFlex = profile.enrollment_mode === "flex";
-  const activePasses = passes.filter(p => p.sessions_used < p.total_sessions && p.valid_until >= todayISO);
+  const activePasses = passes.filter(p => p.status === "validated" && p.sessions_used < p.total_sessions && p.valid_until >= todayISO);
   const flexUsedThisMonth = bookings.filter(b => {
     if (b.booking_type !== "flex") return false;
     const d = new Date(b.session_date + "T00:00:00");
@@ -3128,7 +3269,7 @@ function FlexBookingPanel({
   }
   const firstDate = new Date(weekDates[0] + "T00:00:00");
   const lastDate = new Date(weekDates[4] + "T00:00:00");
-  if (!isFlex && activePasses.length === 0) return null;
+  if (!isFlex && activePasses.length === 0 && passes.length === 0) return null;
   return React.createElement("div", {
     className: "card",
     style: {
@@ -3292,8 +3433,6 @@ function FamilyManagementView({
   });
   const [msg, setMsg] = useState("");
   const [saving, setSaving] = useState(false);
-  const familyGroupIds = familyMembers.map(fm => fm.group_id).filter(Boolean);
-  const takenIds = [...myGroupIds, ...familyGroupIds];
   async function addMember() {
     if (!f.display_name.trim()) {
       setMsg("Indica el nombre completo.");
@@ -3410,7 +3549,7 @@ function FamilyManagementView({
   })), React.createElement(Field, {
     label: "Clase (toca sobre el horario)"
   }, React.createElement(WeeklyTimetable, {
-    groups: allGroups.filter(g => !takenIds.includes(g.id)),
+    groups: allGroups,
     profiles: [],
     onSelect: g => setF({
       ...f,
@@ -3685,7 +3824,7 @@ function StudentApp({
   }, "Mi clase"), React.createElement("div", {
     className: "tab " + (tab === "pagos" ? "active" : ""),
     onClick: () => setTab("pagos")
-  }, "Pagos"), (myGroupIds.length > 0 || profile.enrollment_mode === "flex") && React.createElement("div", {
+  }, "Pagos"), React.createElement("div", {
     className: "tab " + (tab === "recuperar" ? "active" : ""),
     onClick: () => setTab("recuperar")
   }, "Recuperaciones"), myGroupIds.length > 0 && React.createElement("div", {
@@ -3849,7 +3988,9 @@ function StudentApp({
   }), tab === "clase" && myGroupIds.length > 0 && React.createElement(WithdrawFromAcademyView, {
     profile: profile,
     group: group
-  }), tab === "recuperar" && React.createElement(React.Fragment, null, React.createElement(FlexBookingPanel, {
+  }), tab === "recuperar" && React.createElement(React.Fragment, null, React.createElement(BuyBonoView, {
+    profile: profile
+  }), React.createElement(FlexBookingPanel, {
     profile: profile,
     groups: allGroups
   }), myGroupIds.length > 0 && React.createElement(RecoveryBookingPanel, {
@@ -4887,11 +5028,16 @@ function CEODashboard({
   const occupancy = groups.length ? Math.round(100 * groups.reduce((s, g) => s + Math.min(effectiveRoster(g, profiles, extraEnrollments, familyMembers).length, capOf(g)), 0) / groups.reduce((s, g) => s + capOf(g), 0)) : 0;
   const duePaymentYear = todayISO < COURSE_START ? COURSE_START_YEAR : CY;
   const duePaymentMonth = todayISO < COURSE_START ? parseInt(COURSE_START.slice(5, 7)) : CM;
-  const validated = payments.filter(p => p.year === duePaymentYear && p.month === duePaymentMonth && p.status === "validated").reduce((s, p) => s + (p.amount || 0), 0);
+  const validated = payments.filter(p => p.status === "validated").reduce((s, p) => s + (p.amount || 0), 0);
   const pendingCount = enrolledStudents.filter(s => !payments.some(p => p.student_id === s.id && p.year === duePaymentYear && p.month === duePaymentMonth && p.status !== "pending")).length;
   const monthExpenses = expenses.filter(e => e.year === CY && e.month === CM).reduce((s, e) => s + e.amount, 0);
   const birthdaysToday = students.filter(p => isBirthday(p.birthdate));
   const lowOccupancy = groups.filter(g => effectiveRoster(g, profiles, extraEnrollments, familyMembers).length < 3);
+  const totalUsers = profiles.length;
+  const familyCount = (familyMembers || []).length;
+  const activeStudentsCount = enrolledStudents.length + familyCount;
+  const paidThisMonthCount = enrolledStudents.length - pendingCount;
+  const avgRevenuePerStudent = activeStudentsCount > 0 ? Math.round(validated / activeStudentsCount * 100) / 100 : 0;
   const enrollmentChartData = useMemo(() => {
     const arr = [];
     let cumulative = 0;
@@ -4920,9 +5066,30 @@ function CEODashboard({
     }
     return arr;
   }, [enrolledStudents]);
-  const courseChartMonths = SCHOOL_MONTHS.map(m => MN[m.month].slice(0, 3) + " " + String(m.year).slice(2));
-  const incomeByMonth = SCHOOL_MONTHS.map(m => payments.filter(p => p.year === m.year && p.month === m.month && p.status === "validated").reduce((s, p) => s + (p.amount || 0), 0));
-  const expenseByMonth = SCHOOL_MONTHS.map(m => expenses.filter(e => e.year === m.year && e.month === m.month).reduce((s, e) => s + e.amount, 0));
+  const CHART_MONTHS = [{
+    year: COURSE_START_YEAR,
+    month: 8
+  }, ...SCHOOL_MONTHS];
+  const courseChartMonths = CHART_MONTHS.map(m => MN[m.month].slice(0, 3) + " " + String(m.year).slice(2));
+  const incomeByMonth = useMemo(() => {
+    const totals = {};
+    CHART_MONTHS.forEach(m => totals[m.year + "-" + m.month] = 0);
+    const batches = {};
+    payments.filter(p => p.status === "validated").forEach(p => {
+      const key = p.student_id + "::" + (p.file_path || p.validated_date || p.year + "-" + p.month);
+      (batches[key] = batches[key] || []).push(p);
+    });
+    Object.values(batches).forEach(rows => {
+      const total = rows.reduce((s, r) => s + (r.amount || 0), 0);
+      const share = rows.length ? total / rows.length : 0;
+      rows.forEach(r => {
+        const k = r.year + "-" + r.month;
+        if (k in totals) totals[k] += share;
+      });
+    });
+    return CHART_MONTHS.map(m => Math.round((totals[m.year + "-" + m.month] || 0) * 100) / 100);
+  }, [payments]);
+  const expenseByMonth = CHART_MONTHS.map(m => expenses.filter(e => e.year === m.year && e.month === m.month).reduce((s, e) => s + e.amount, 0));
   return React.createElement("div", null, React.createElement(CalendarInfoBanner, null), birthdaysToday.length > 0 && React.createElement("div", {
     className: "card",
     style: {
@@ -4967,7 +5134,7 @@ function CEODashboard({
     style: {
       color: "var(--gris)"
     }
-  }, "Ingresos validados (", MN[duePaymentMonth], ")")), React.createElement("div", {
+  }, "Ingresos validados (total del curso)")), React.createElement("div", {
     className: "col card"
   }, React.createElement("div", {
     style: {
@@ -4979,7 +5146,19 @@ function CEODashboard({
     style: {
       color: "var(--gris)"
     }
-  }, "Gastos (", MN[CM], ")"))), React.createElement("div", {
+  }, "Gastos (", MN[CM], ")")), React.createElement("div", {
+    className: "col card"
+  }, React.createElement("div", {
+    style: {
+      fontSize: 26,
+      fontWeight: 800,
+      color: "var(--azul-oscuro)"
+    }
+  }, avgRevenuePerStudent, "€"), React.createElement("div", {
+    style: {
+      color: "var(--gris)"
+    }
+  }, "Ingreso medio / alumno"))), React.createElement("div", {
     className: "card",
     style: {
       marginTop: 14
@@ -5051,7 +5230,59 @@ function CEODashboard({
     style: {
       marginTop: 0
     }
-  }, "📈 Alumnos activos y altas nuevas (últimos 6 meses)"), React.createElement(EnrollmentChart, {
+  }, "📈 Alumnos activos y altas nuevas (últimos 6 meses)"), React.createElement("div", {
+    className: "row",
+    style: {
+      marginBottom: 16
+    }
+  }, React.createElement("div", {
+    className: "col card",
+    style: {
+      background: "var(--fondo)"
+    }
+  }, React.createElement("div", {
+    style: {
+      fontSize: 22,
+      fontWeight: 800
+    }
+  }, totalUsers), React.createElement("div", {
+    style: {
+      color: "var(--gris)",
+      fontSize: 12
+    }
+  }, "Usuarios en la app (todos)")), React.createElement("div", {
+    className: "col card",
+    style: {
+      background: "var(--fondo)"
+    }
+  }, React.createElement("div", {
+    style: {
+      fontSize: 22,
+      fontWeight: 800,
+      color: "var(--azul-oscuro)"
+    }
+  }, activeStudentsCount), React.createElement("div", {
+    style: {
+      color: "var(--gris)",
+      fontSize: 12
+    }
+  }, "Alumnos activos")), React.createElement("div", {
+    className: "col card",
+    style: {
+      background: "var(--fondo)"
+    }
+  }, React.createElement("div", {
+    style: {
+      fontSize: 22,
+      fontWeight: 800,
+      color: "var(--verde)"
+    }
+  }, paidThisMonthCount, "/", enrolledStudents.length), React.createElement("div", {
+    style: {
+      color: "var(--gris)",
+      fontSize: 12
+    }
+  }, "Con pago validado"))), React.createElement(EnrollmentChart, {
     data: enrollmentChartData
   })), React.createElement("div", {
     className: "card",
@@ -5062,7 +5293,7 @@ function CEODashboard({
     style: {
       marginTop: 0
     }
-  }, "💶 Ingresos y gastos por mes (curso sept-jun)"), React.createElement(IncomeExpenseChart, {
+  }, "💶 Ingresos y gastos por mes (agosto + curso sept-jun)"), React.createElement(IncomeExpenseChart, {
     months: courseChartMonths,
     income: incomeByMonth,
     expense: expenseByMonth
@@ -5738,39 +5969,139 @@ function PaymentsOverviewByGroup({
   profiles,
   extraEnrollments,
   familyMembers,
-  payments
+  payments,
+  onValidate,
+  onMarkManual
 }) {
   const pendingValidation = payments.filter(p => p.status === "uploaded");
+  const [sortMode, setSortMode] = useState("group");
   const sortedGroups = [...groups].sort((a, b) => a.day - b.day || a.time_start.localeCompare(b.time_start));
   const flexStudents = profiles.filter(p => p.role === "student" && !p.group_id && p.enrollment_mode === "flex");
-  function rowFor(name, p, paymentsOf) {
+  async function view(path) {
+    const {
+      data
+    } = await sb.storage.from("receipts").createSignedUrl(path, 3600);
+    if (data) window.open(data.signedUrl, "_blank");
+  }
+  function rowFor(name, p, paymentsOf, extraFee) {
+    if (!p) return React.createElement("div", {
+      key: name,
+      style: {
+        padding: "8px 0",
+        borderBottom: "1px solid #EEF2F8",
+        fontSize: 13,
+        color: "var(--gris)"
+      }
+    }, name, " — sin cuenta en la app");
+    const planType = p.payment_type || "monthly";
+    const monthlyFee = (p.fee || 0) + (extraFee || 0);
+    const due = computeDueMonth(p);
+    const amountDue = planType === "monthly" ? monthlyFee : computePlanTotal(monthlyFee, planType, due.year, due.month);
+    const planLabel = {
+      monthly: "Mensual",
+      quarterly: "Trimestral",
+      annual: "Curso completo"
+    }[planType];
+    const duePayment = paymentsOf.find(pp => pp.year === due.year && pp.month === due.month);
+    const isPaid = duePayment?.status === "validated";
+    const isUploaded = duePayment?.status === "uploaded";
     return React.createElement("div", {
       key: name,
+      style: {
+        padding: "8px 0",
+        borderBottom: "1px solid #EEF2F8"
+      }
+    }, React.createElement("div", {
       style: {
         display: "flex",
         alignItems: "center",
         justifyContent: "space-between",
         gap: 10,
-        padding: "6px 0",
-        borderBottom: "1px solid #EEF2F8"
+        flexWrap: "wrap"
       }
     }, React.createElement("span", {
       style: {
         fontSize: 13,
-        flexShrink: 0,
-        minWidth: 140
+        fontWeight: 600,
+        minWidth: 150
       }
-    }, name), p ? React.createElement(PaymentProgressCalendar, {
-      payments: paymentsOf,
-      enrollStartYear: p.enrollment_start_year,
-      enrollStartMonth: p.enrollment_start_month
-    }) : React.createElement("span", {
+    }, name), React.createElement("span", {
       style: {
         fontSize: 12,
         color: "var(--gris)"
       }
-    }, "Sin cuenta en la app"));
+    }, planLabel), React.createElement("span", {
+      style: {
+        fontSize: 15,
+        fontWeight: 800,
+        color: "var(--azul-oscuro)"
+      }
+    }, amountDue, "€"), isPaid ? React.createElement("span", {
+      className: "badge badge-ok"
+    }, "Pagado (", MN[due.month].slice(0, 3), ")") : isUploaded ? React.createElement("span", {
+      className: "badge badge-warn"
+    }, "Justif. subido") : React.createElement("span", {
+      className: "badge badge-bad"
+    }, "Pendiente (", MN[due.month].slice(0, 3), ")"), React.createElement("div", {
+      className: "row",
+      style: {
+        gap: 6
+      }
+    }, duePayment?.file_path && React.createElement("button", {
+      className: "btn-ghost",
+      style: {
+        padding: "3px 8px",
+        fontSize: 11
+      },
+      onClick: () => view(duePayment.file_path)
+    }, "Ver justif."), isUploaded && React.createElement("button", {
+      className: "btn-secondary",
+      style: {
+        padding: "3px 8px",
+        fontSize: 11
+      },
+      onClick: () => onValidate(p.id, duePayment.file_path)
+    }, "Validar"), !isPaid && React.createElement("button", {
+      className: "btn-ghost",
+      style: {
+        padding: "3px 8px",
+        fontSize: 11
+      },
+      onClick: () => onMarkManual(p)
+    }, "Marcar pagado"))), React.createElement(PaymentProgressCalendar, {
+      payments: paymentsOf,
+      enrollStartYear: p.enrollment_start_year,
+      enrollStartMonth: p.enrollment_start_month
+    }));
   }
+  const allRows = [];
+  flexStudents.forEach(p => allRows.push({
+    name: p.display_name,
+    p,
+    group: "🔄 Suscripción flexible",
+    extraFee: 0
+  }));
+  sortedGroups.forEach(g => {
+    const direct = profiles.filter(p => p.role === "student" && p.group_id === g.id);
+    const viaExtra = (extraEnrollments || []).filter(e => e.group_id === g.id).map(e => profiles.find(p => p.id === e.student_id)).filter(Boolean);
+    const viaFamily = (familyMembers || []).filter(f => f.group_id === g.id);
+    const groupLabel = `${DNF[g.day - 1]} ${g.time_start}-${g.time_end} · ${g.name}`;
+    [...direct, ...viaExtra].forEach(p => allRows.push({
+      name: p.display_name,
+      p,
+      group: groupLabel,
+      extraFee: 0
+    }));
+    viaFamily.forEach(fm => {
+      const parent = profiles.find(p => p.id === fm.parent_id);
+      allRows.push({
+        name: fm.display_name + " (familiar)",
+        p: parent,
+        group: groupLabel,
+        extraFee: 0
+      });
+    });
+  });
   return React.createElement("div", {
     style: {
       marginBottom: 20
@@ -5782,12 +6113,20 @@ function PaymentsOverviewByGroup({
       borderLeft: "4px solid var(--mostaza)",
       background: "#FFF3D6"
     }
-  }, "🔔 ", React.createElement("b", null, pendingValidation.length, " justificante", pendingValidation.length !== 1 ? "s" : "", " pendiente", pendingValidation.length !== 1 ? "s" : "", " de validar"), " — revísalos en la tabla de abajo."), React.createElement("div", {
+  }, "🔔 ", React.createElement("b", null, pendingValidation.length, " justificante", pendingValidation.length !== 1 ? "s" : "", " pendiente", pendingValidation.length !== 1 ? "s" : "", " de validar"), " — puedes hacerlo directamente aquí abajo."), React.createElement("div", {
+    style: {
+      display: "flex",
+      justifyContent: "space-between",
+      alignItems: "center",
+      marginBottom: 10,
+      flexWrap: "wrap",
+      gap: 10
+    }
+  }, React.createElement("div", {
     style: {
       display: "flex",
       gap: 10,
-      fontSize: 12,
-      marginBottom: 10
+      fontSize: 12
     }
   }, React.createElement("span", null, React.createElement("span", {
     style: {
@@ -5809,7 +6148,7 @@ function PaymentsOverviewByGroup({
       marginRight: 4,
       verticalAlign: "middle"
     }
-  }), "Debería estar pagado y falta"), React.createElement("span", null, React.createElement("span", {
+  }), "Falta"), React.createElement("span", null, React.createElement("span", {
     style: {
       display: "inline-block",
       width: 14,
@@ -5819,7 +6158,28 @@ function PaymentsOverviewByGroup({
       marginRight: 4,
       verticalAlign: "middle"
     }
-  }), "Mes futuro")), flexStudents.length > 0 && React.createElement("div", {
+  }), "Mes futuro")), React.createElement("div", {
+    className: "row",
+    style: {
+      gap: 6
+    }
+  }, React.createElement("button", {
+    className: sortMode === "group" ? "btn-secondary" : "btn-ghost",
+    style: {
+      padding: "4px 10px",
+      fontSize: 12
+    },
+    onClick: () => setSortMode("group")
+  }, "Por clase"), React.createElement("button", {
+    className: sortMode === "az" ? "btn-secondary" : "btn-ghost",
+    style: {
+      padding: "4px 10px",
+      fontSize: 12
+    },
+    onClick: () => setSortMode("az")
+  }, "A-Z"))), sortMode === "az" ? React.createElement("div", {
+    className: "card"
+  }, allRows.sort((a, b) => a.name.localeCompare(b.name)).map(r => rowFor(r.name, r.p, payments.filter(pp => pp.student_id === r.p?.id), r.extraFee))) : React.createElement(React.Fragment, null, flexStudents.length > 0 && React.createElement("div", {
     className: "card",
     style: {
       marginBottom: 10,
@@ -5856,7 +6216,7 @@ function PaymentsOverviewByGroup({
       const parent = profiles.find(p => p.id === fm.parent_id);
       return rowFor(fm.display_name + " (familiar)", parent, parent ? payments.filter(pp => pp.student_id === parent.id) : []);
     }));
-  }));
+  })));
 }
 function PaymentsView({
   groups,
@@ -5906,17 +6266,23 @@ function PaymentsView({
     } = await sb.storage.from("receipts").createSignedUrl(path, 3600);
     if (data) window.open(data.signedUrl, "_blank");
   }
+  const [showMonthDetail, setShowMonthDetail] = useState(false);
   return React.createElement("div", null, React.createElement(PaymentsOverviewByGroup, {
     groups: groups,
     profiles: profiles,
     extraEnrollments: extraEnrollments,
     familyMembers: familyMembers,
-    payments: payments
-  }), React.createElement("h3", {
+    payments: payments,
+    onValidate: validate,
+    onMarkManual: markManual
+  }), React.createElement("button", {
+    className: "btn-ghost",
+    onClick: () => setShowMonthDetail(s => !s)
+  }, showMonthDetail ? "Ocultar" : "Ver", " un mes concreto (histórico)"), showMonthDetail && React.createElement("div", {
     style: {
-      marginTop: 0
+      marginTop: 12
     }
-  }, "Validar por mes"), React.createElement("div", {
+  }, React.createElement("div", {
     className: "row",
     style: {
       marginBottom: 10,
@@ -5944,7 +6310,7 @@ function PaymentsView({
     value: y
   }, y)))))), React.createElement("div", {
     className: "table-wrap"
-  }, React.createElement("table", null, React.createElement("thead", null, React.createElement("tr", null, React.createElement("th", null, "Alumno"), React.createElement("th", null, "Teléfono"), React.createElement("th", null, "Cuota"), React.createElement("th", null, "Plan"), React.createElement("th", null, "Estado"), React.createElement("th", null, "Justificante"), React.createElement("th", null))), React.createElement("tbody", null, students.map(s => {
+  }, React.createElement("table", null, React.createElement("thead", null, React.createElement("tr", null, React.createElement("th", null, "Alumno"), React.createElement("th", null, "Teléfono"), React.createElement("th", null, "Cuota mensual base"), React.createElement("th", null, "Plan"), React.createElement("th", null, "Estado"), React.createElement("th", null, "Justificante"), React.createElement("th", null))), React.createElement("tbody", null, students.map(s => {
     const p = payments.find(pp => pp.student_id === s.id && pp.year === year && pp.month === month);
     const planLabel = {
       monthly: "Mensual",
@@ -5979,7 +6345,7 @@ function PaymentsView({
       },
       onClick: () => markManual(s)
     }, "Marcar pagado (manual)")));
-  })))));
+  }))))));
 }
 function StatsView({
   groups,
@@ -6933,7 +7299,72 @@ function MaterialsShopCEOView() {
     onClick: () => saveItem(editingItem)
   }, "Guardar")))));
 }
+function StudentBonosView() {
+  const [passes, setPasses] = useState([]);
+  const [profiles, setProfiles] = useState([]);
+  function load() {
+    sb.from("flex_passes").select("*").order("created_at", {
+      ascending: false
+    }).then(({
+      data
+    }) => setPasses(data || []));
+    sb.from("profiles").select("id,display_name").then(({
+      data
+    }) => setProfiles(data || []));
+  }
+  useEffect(load, []);
+  async function validate(p) {
+    await sb.from("flex_passes").update({
+      status: "validated"
+    }).eq("id", p.id);
+    load();
+  }
+  async function viewProof(path) {
+    const {
+      data
+    } = await sb.storage.from("receipts").createSignedUrl(path, 3600);
+    if (data) window.open(data.signedUrl, "_blank");
+  }
+  const pending = passes.filter(p => p.status !== "validated");
+  return React.createElement("div", null, pending.length > 0 && React.createElement("div", {
+    className: "card",
+    style: {
+      marginBottom: 14,
+      borderLeft: "4px solid var(--mostaza)",
+      background: "#FFF3D6"
+    }
+  }, "🔔 ", React.createElement("b", null, pending.length, " bono", pending.length !== 1 ? "s" : "", " comprado", pending.length !== 1 ? "s" : "", " pendiente", pending.length !== 1 ? "s" : "", " de validar")), React.createElement("div", {
+    className: "table-wrap"
+  }, React.createElement("table", null, React.createElement("thead", null, React.createElement("tr", null, React.createElement("th", null, "Alumna"), React.createElement("th", null, "Tipo"), React.createElement("th", null, "Usadas"), React.createElement("th", null, "Caduca"), React.createElement("th", null, "Estado"), React.createElement("th", null, "Justif."), React.createElement("th", null))), React.createElement("tbody", null, passes.map(p => {
+    const s = profiles.find(pp => pp.id === p.student_id);
+    return React.createElement("tr", {
+      key: p.id
+    }, React.createElement("td", null, s?.display_name || "—"), React.createElement("td", null, p.pass_type === "bono5" ? "Bono 5" : "Bono 10"), React.createElement("td", null, p.sessions_used, "/", p.total_sessions), React.createElement("td", null, p.valid_until), React.createElement("td", null, p.status === "validated" ? React.createElement("span", {
+      className: "badge badge-ok"
+    }, "Validado") : p.status === "uploaded" ? React.createElement("span", {
+      className: "badge badge-warn"
+    }, "Justif. subido") : React.createElement("span", {
+      className: "badge badge-bad"
+    }, "Pendiente")), React.createElement("td", null, p.file_path && React.createElement("a", {
+      href: "#",
+      onClick: e => {
+        e.preventDefault();
+        viewProof(p.file_path);
+      }
+    }, "Ver")), React.createElement("td", null, p.status !== "validated" && React.createElement("button", {
+      className: "btn-secondary",
+      style: {
+        padding: "3px 8px",
+        fontSize: 11
+      },
+      onClick: () => validate(p)
+    }, "Validar")));
+  })))), passes.length === 0 && React.createElement("div", {
+    className: "empty"
+  }, "Todavía no hay ningún bono de clases asignado ni comprado."));
+}
 function VouchersView() {
+  const [subtab, setSubtab] = useState("alumnas");
   const [vouchers, setVouchers] = useState([]);
   const [editing, setEditing] = useState(null);
   function load() {
@@ -6949,7 +7380,18 @@ function VouchersView() {
     setEditing(null);
     load();
   }
-  return React.createElement("div", null, React.createElement("button", {
+  return React.createElement("div", null, React.createElement("div", {
+    className: "tabs",
+    style: {
+      marginBottom: 14
+    }
+  }, React.createElement("div", {
+    className: "tab " + (subtab === "alumnas" ? "active" : ""),
+    onClick: () => setSubtab("alumnas")
+  }, "Bonos de alumnas"), React.createElement("div", {
+    className: "tab " + (subtab === "regalo" ? "active" : ""),
+    onClick: () => setSubtab("regalo")
+  }, "Bonos regalo")), subtab === "alumnas" && React.createElement(StudentBonosView, null), subtab === "regalo" && React.createElement("div", null, React.createElement("button", {
     className: "btn-primary",
     style: {
       marginBottom: 12
@@ -7056,7 +7498,7 @@ function VouchersView() {
   }, "Cancelar"), React.createElement("button", {
     className: "btn-primary",
     onClick: () => save(editing)
-  }, "Guardar")))));
+  }, "Guardar"))))));
 }
 function ExpensesView({
   expenses,
@@ -7064,23 +7506,37 @@ function ExpensesView({
 }) {
   const [concept, setConcept] = useState("");
   const [amount, setAmount] = useState("");
+  const [expYear, setExpYear] = useState(CY);
+  const [expMonth, setExpMonth] = useState(CM);
+  const [viewYear, setViewYear] = useState(CY);
+  const [viewMonth, setViewMonth] = useState(CM);
   async function add() {
     if (!concept || !amount) return;
     await sb.from("expenses").insert({
       concept,
       amount: parseFloat(amount),
-      month: CM,
-      year: CY
+      month: expMonth,
+      year: expYear
     });
     setConcept("");
     setAmount("");
     reload();
   }
-  const monthExpenses = expenses.filter(e => e.year === CY && e.month === CM);
+  const monthExpenses = expenses.filter(e => e.year === viewYear && e.month === viewMonth);
+  const monthTotal = monthExpenses.reduce((s, e) => s + e.amount, 0);
   return React.createElement("div", null, React.createElement("div", {
+    className: "card",
+    style: {
+      marginBottom: 14
+    }
+  }, React.createElement("h4", {
+    style: {
+      marginTop: 0
+    }
+  }, "Nuevo gasto"), React.createElement("div", {
     className: "row",
     style: {
-      marginBottom: 12
+      marginBottom: 8
     }
   }, React.createElement("div", {
     className: "col"
@@ -7095,12 +7551,71 @@ function ExpensesView({
     type: "number",
     value: amount,
     onChange: e => setAmount(e.target.value)
-  })), React.createElement("button", {
+  }))), React.createElement("div", {
+    className: "row",
+    style: {
+      marginBottom: 8,
+      alignItems: "flex-end"
+    }
+  }, React.createElement("div", {
+    className: "col"
+  }, React.createElement(Field, {
+    label: "Mes al que corresponde"
+  }, React.createElement("select", {
+    value: expMonth,
+    onChange: e => setExpMonth(parseInt(e.target.value))
+  }, MN.slice(1).map((m, i) => React.createElement("option", {
+    key: m,
+    value: i + 1
+  }, m))))), React.createElement("div", {
+    className: "col"
+  }, React.createElement(Field, {
+    label: "Año"
+  }, React.createElement("select", {
+    value: expYear,
+    onChange: e => setExpYear(parseInt(e.target.value))
+  }, [CY - 1, CY, CY + 1].map(y => React.createElement("option", {
+    key: y,
+    value: y
+  }, y)))))), React.createElement("button", {
     className: "btn-primary",
     onClick: add
-  }, "Añadir")), React.createElement("table", null, React.createElement("thead", null, React.createElement("tr", null, React.createElement("th", null, "Concepto"), React.createElement("th", null, "Importe"))), React.createElement("tbody", null, monthExpenses.map(e => React.createElement("tr", {
+  }, "Añadir")), React.createElement("div", {
+    className: "row",
+    style: {
+      marginBottom: 10,
+      alignItems: "flex-end"
+    }
+  }, React.createElement("div", {
+    className: "col"
+  }, React.createElement(Field, {
+    label: "Ver gastos de"
+  }, React.createElement("select", {
+    value: viewMonth,
+    onChange: e => setViewMonth(parseInt(e.target.value))
+  }, MN.slice(1).map((m, i) => React.createElement("option", {
+    key: m,
+    value: i + 1
+  }, m))))), React.createElement("div", {
+    className: "col"
+  }, React.createElement(Field, {
+    label: "Año"
+  }, React.createElement("select", {
+    value: viewYear,
+    onChange: e => setViewYear(parseInt(e.target.value))
+  }, [CY - 1, CY, CY + 1].map(y => React.createElement("option", {
+    key: y,
+    value: y
+  }, y)))))), React.createElement("table", null, React.createElement("thead", null, React.createElement("tr", null, React.createElement("th", null, "Concepto"), React.createElement("th", null, "Importe"))), React.createElement("tbody", null, monthExpenses.map(e => React.createElement("tr", {
     key: e.id
-  }, React.createElement("td", null, e.concept), React.createElement("td", null, e.amount, "€"))))));
+  }, React.createElement("td", null, e.concept), React.createElement("td", null, e.amount, "€"))))), monthExpenses.length === 0 && React.createElement("div", {
+    className: "empty"
+  }, "Sin gastos registrados en ", MN[viewMonth], " ", viewYear, "."), monthExpenses.length > 0 && React.createElement("p", {
+    style: {
+      fontWeight: 700,
+      marginTop: 8
+    }
+  }, "Total: ", monthTotal, "€"));
 }
 function CEOApp({
   profile,
