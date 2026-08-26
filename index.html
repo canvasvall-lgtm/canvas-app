@@ -517,6 +517,30 @@ function SpotsBar({
     }
   })));
 }
+function ConditionRow({
+  label,
+  children
+}) {
+  return React.createElement("div", {
+    style: {
+      marginBottom: 10,
+      paddingBottom: 10,
+      borderBottom: "1px solid #EEF2F8"
+    }
+  }, React.createElement("div", {
+    style: {
+      fontWeight: 700,
+      fontSize: 14
+    }
+  }, label), React.createElement("div", {
+    style: {
+      fontSize: 13,
+      color: "var(--gris)",
+      marginTop: 2
+    }
+  }, children));
+}
+
 function ConditionsAndPricingView({
   groups
 }) {
@@ -543,14 +567,14 @@ function ConditionsAndPricingView({
       fontSize: 13,
       color: "var(--gris)"
     }
-  }, "Cargando…"), React.createElement("table", null, React.createElement("tbody", null, byName.map(([name, fees]) => React.createElement("tr", {
-    key: name
-  }, React.createElement("td", {
+  }, "Cargando…"), byName.map(([name, fees]) => React.createElement("div", {
+    key: name,
     style: {
       borderLeft: `4px solid ${classColor(name)}`,
-      paddingLeft: 8
+      paddingLeft: 8,
+      marginBottom: 8
     }
-  }, name), React.createElement("td", null, React.createElement("b", null, Array.from(fees).sort((a, b) => a - b).join(" / "), "€/mes"))))))), React.createElement("div", {
+  }, name, " — ", React.createElement("b", null, Array.from(fees).sort((a, b) => a - b).join(" / "), "€/mes")))), React.createElement("div", {
     className: "card",
     style: {
       marginBottom: 14
@@ -560,7 +584,17 @@ function ConditionsAndPricingView({
       marginTop: 0,
       color: "var(--azul-oscuro)"
     }
-  }, "💶 Cuotas y descuentos"), React.createElement("table", null, React.createElement("tbody", null, React.createElement("tr", null, React.createElement("td", null, "Matrícula"), React.createElement("td", null, React.createElement("b", null, STANDARD_ENROLLMENT_FEE, "€"), " (gratis si te inscribes en agosto)")), React.createElement("tr", null, React.createElement("td", null, "Aforo por clase"), React.createElement("td", null, React.createElement("b", null, MAX, " alumnos"), " (Aerografía: 6, por seguridad del material)")), React.createElement("tr", null, React.createElement("td", null, "Varias clases a la vez"), React.createElement("td", null, React.createElement("b", null, Math.round(MULTI_CLASS_DISCOUNT * 100), "% de descuento"), " sobre el total desde la 2ª clase")), React.createElement("tr", null, React.createElement("td", null, "Pago trimestral"), React.createElement("td", null, React.createElement("b", null, Math.round(PLAN_DISCOUNT.quarterly * 100), "% de descuento"), " — cubre el trimestre real del curso (sept-dic, ene-mar o abr-jun)")), React.createElement("tr", null, React.createElement("td", null, "Pago del curso completo"), React.createElement("td", null, React.createElement("b", null, Math.round(PLAN_DISCOUNT.annual * 100), "% de descuento"), " — cubre todo el curso (sept-jun)")))), React.createElement("p", {
+  }, "💶 Cuotas y descuentos"), React.createElement(ConditionRow, {
+    label: "Matrícula"
+  }, React.createElement("b", null, STANDARD_ENROLLMENT_FEE, "€"), " (gratis si te inscribes en agosto)"), React.createElement(ConditionRow, {
+    label: "Aforo por clase"
+  }, React.createElement("b", null, MAX, " alumnos"), " (Aerografía: 6, por seguridad del material)"), React.createElement(ConditionRow, {
+    label: "Varias clases a la vez"
+  }, React.createElement("b", null, Math.round(MULTI_CLASS_DISCOUNT * 100), "% de descuento"), " sobre el total desde la 2ª clase"), React.createElement(ConditionRow, {
+    label: "Pago trimestral"
+  }, React.createElement("b", null, Math.round(PLAN_DISCOUNT.quarterly * 100), "% de descuento"), " — cubre el trimestre real del curso (sept-dic, ene-mar o abr-jun)"), React.createElement(ConditionRow, {
+    label: "Pago del curso completo"
+  }, React.createElement("b", null, Math.round(PLAN_DISCOUNT.annual * 100), "% de descuento"), " — cubre todo el curso (sept-jun)"), React.createElement("p", {
     style: {
       fontSize: 12,
       color: "var(--gris)",
@@ -576,7 +610,13 @@ function ConditionsAndPricingView({
       marginTop: 0,
       color: "var(--azul-oscuro)"
     }
-  }, "🔄 Suscripción flexible y bonos"), React.createElement("table", null, React.createElement("tbody", null, React.createElement("tr", null, React.createElement("td", null, "Suscripción flexible"), React.createElement("td", null, React.createElement("b", null, FLEX_MONTHLY_FEE, "€/mes"), " — ", FLEX_MONTHLY_SESSIONS, " clases al mes, reservando cada semana el día y hora que mejor venga (sin grupo fijo)")), React.createElement("tr", null, React.createElement("td", null, "Bono de 5 clases"), React.createElement("td", null, React.createElement("b", null, BONO_PRICES.bono5.price, "€"), " — válido hasta el final del curso, sin mensualidad (", (BONO_PRICES.bono5.price / BONO_PRICES.bono5.sessions).toFixed(1), "€/clase)")), React.createElement("tr", null, React.createElement("td", null, "Bono de 10 clases"), React.createElement("td", null, React.createElement("b", null, BONO_PRICES.bono10.price, "€"), " — válido hasta el final del curso, sin mensualidad (", (BONO_PRICES.bono10.price / BONO_PRICES.bono10.sessions).toFixed(1), "€/clase)")))), React.createElement("p", {
+  }, "🔄 Suscripción flexible y bonos"), React.createElement(ConditionRow, {
+    label: "Suscripción flexible"
+  }, React.createElement("b", null, FLEX_MONTHLY_FEE, "€/mes"), " — ", FLEX_MONTHLY_SESSIONS, " clases al mes, reservando cada semana el día y hora que mejor venga (sin grupo fijo)"), React.createElement(ConditionRow, {
+    label: "Bono de 5 clases"
+  }, React.createElement("b", null, BONO_PRICES.bono5.price, "€"), " — válido hasta el final del curso, sin mensualidad (", (BONO_PRICES.bono5.price / BONO_PRICES.bono5.sessions).toFixed(1), "€/clase)"), React.createElement(ConditionRow, {
+    label: "Bono de 10 clases"
+  }, React.createElement("b", null, BONO_PRICES.bono10.price, "€"), " — válido hasta el final del curso, sin mensualidad (", (BONO_PRICES.bono10.price / BONO_PRICES.bono10.sessions).toFixed(1), "€/clase)"), React.createElement("p", {
     style: {
       fontSize: 12,
       color: "var(--gris)",
@@ -597,6 +637,7 @@ function ConditionsAndPricingView({
     }
   }, React.createElement("b", null, title, "."), " ", body))));
 }
+
 function DateInputES({
   value,
   onChange
@@ -6106,7 +6147,17 @@ function PaymentsOverviewByGroup({
   onValidate,
   onMarkManual
 }) {
-  const pendingValidation = payments.filter(p => p.status === "uploaded");
+  const pendingBatches = {};
+  payments.filter(p => p.status === "uploaded").forEach(p => {
+    const key = p.student_id + "::" + (p.file_path || p.year + "-" + p.month);
+    if (!pendingBatches[key]) pendingBatches[key] = {
+      student_id: p.student_id,
+      months: []
+    };
+    pendingBatches[key].months.push(p);
+  });
+  const pendingValidation = Object.values(pendingBatches);
+  const [showPendingList, setShowPendingList] = useState(false);
   const [sortMode, setSortMode] = useState("group");
   const sortedGroups = [...groups].sort((a, b) => a.day - b.day || a.time_start.localeCompare(b.time_start));
   const flexStudents = profiles.filter(p => p.role === "student" && !p.group_id && p.enrollment_mode === "flex");
@@ -6248,10 +6299,19 @@ function PaymentsOverviewByGroup({
       cursor: "pointer"
     },
     onClick: () => setShowPendingList(s => !s)
-  }, "🔔 ", React.createElement("b", null, pendingValidation.length, " justificante", pendingValidation.length !== 1 ? "s" : "", " pendiente", pendingValidation.length !== 1 ? "s" : "", " de validar"), " — toca aquí para ", showPendingList ? "ocultar" : "ver", " de quién son.",
-  showPendingList && React.createElement("div", {style:{marginTop:8,fontSize:13}}, pendingValidation.map((batch,i) => {
+  }, "🔔 ", React.createElement("b", null, pendingValidation.length, " justificante", pendingValidation.length !== 1 ? "s" : "", " pendiente", pendingValidation.length !== 1 ? "s" : "", " de validar"), " — toca aquí para ", showPendingList ? "ocultar" : "ver", " de quién son.", showPendingList && React.createElement("div", {
+    style: {
+      marginTop: 8,
+      fontSize: 13
+    }
+  }, pendingValidation.map((batch, i) => {
     const s = profiles.find(pp => pp.id === batch.student_id);
-    return React.createElement("div", {key:i, style:{padding:"4px 0"}}, "• ", s?.display_name || "Alumno/a desconocido", " (", batch.months.length, " mes", batch.months.length!==1?"es":"", ")");
+    return React.createElement("div", {
+      key: i,
+      style: {
+        padding: "4px 0"
+      }
+    }, "• ", s?.display_name || "Alumno/a desconocido", " (", batch.months.length, " mes", batch.months.length !== 1 ? "es" : "", ")");
   }))), React.createElement("div", {
     style: {
       display: "flex",
@@ -6749,9 +6809,7 @@ function TeacherPayView({
       fontSize: 13,
       color: "var(--gris)"
     }
-  }, "\"Real\" se calcula a partir de las sesiones con asistencia ya registrada. \"Estimación\" calcula, según el calendario escolar y el alumnado inscrito hoy, cuánto se prevé pagar ese mes si dan todas las clases previstas. Toca una fila para ver el detalle día a día (real)."), React.createElement("div", {
-    className: "table-wrap"
-  }, React.createElement("table", null, React.createElement("thead", null, React.createElement("tr", null, React.createElement("th", null, "Profesora"), React.createElement("th", null, "Sesiones (real)"), React.createElement("th", null, "Horas (real)"), React.createElement("th", null, "Total real"), React.createElement("th", null, "Estimación del mes"), React.createElement("th", null))), React.createElement("tbody", null, TEACHERS.map(t => {
+  }, "\"Real\" se calcula a partir de las sesiones con asistencia ya registrada. \"Estimación\" calcula, según el calendario escolar y el alumnado inscrito hoy, cuánto se prevé pagar ese mes si dan todas las clases previstas. Toca una tarjeta para ver el detalle día a día (real)."), TEACHERS.map(t => {
     const d = byTeacher[t] || {
       hours: 0,
       total: 0,
@@ -6762,24 +6820,64 @@ function TeacherPayView({
       hours: 0,
       total: 0
     };
-    return React.createElement("tr", {
+    const open = detailTeacher === t;
+    return React.createElement("div", {
       key: t,
+      className: "card",
       style: {
+        marginBottom: 10,
         cursor: "pointer"
       },
-      onClick: () => setDetailTeacher(detailTeacher === t ? null : t)
-    }, React.createElement("td", null, t), React.createElement("td", null, d.sessions), React.createElement("td", null, d.hours.toFixed(1), "h"), React.createElement("td", null, React.createElement("b", null, d.total.toFixed(2), "€")), React.createElement("td", null, est.sessions, " sesiones · ", est.hours, "h · ", React.createElement("b", {
+      onClick: () => setDetailTeacher(open ? null : t)
+    }, React.createElement("div", {
       style: {
-        color: "var(--azul-oscuro)"
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "center"
       }
-    }, est.total, "€")), React.createElement("td", null, React.createElement("button", {
+    }, React.createElement("div", {
+      style: {
+        fontWeight: 800,
+        color: "var(--azul-oscuro)",
+        fontSize: 15
+      }
+    }, t), React.createElement("button", {
       className: "btn-ghost",
       style: {
         padding: "4px 10px",
         fontSize: 12
       }
-    }, detailTeacher === t ? "Cerrar" : "Ver detalle")));
-  })))), detailTeacher && React.createElement("div", {
+    }, open ? "Cerrar" : "Ver detalle")), React.createElement("div", {
+      style: {
+        display: "grid",
+        gridTemplateColumns: "1fr 1fr",
+        gap: "6px 12px",
+        marginTop: 10,
+        fontSize: 13
+      }
+    }, React.createElement("div", null, React.createElement("div", {
+      style: {
+        color: "var(--gris)",
+        fontSize: 11
+      }
+    }, "REAL este mes"), React.createElement("div", null, d.sessions, " sesiones · ", d.hours.toFixed(1), "h"), React.createElement("div", {
+      style: {
+        fontWeight: 800,
+        fontSize: 16
+      }
+    }, d.total.toFixed(2), "€")), React.createElement("div", null, React.createElement("div", {
+      style: {
+        color: "var(--gris)",
+        fontSize: 11
+      }
+    }, "ESTIMACIÓN del mes"), React.createElement("div", null, est.sessions, " sesiones · ", est.hours, "h"), React.createElement("div", {
+      style: {
+        fontWeight: 800,
+        fontSize: 16,
+        color: "var(--azul-oscuro)"
+      }
+    }, est.total, "€"))));
+  }), detailTeacher && React.createElement("div", {
     className: "card",
     style: {
       marginTop: 12
