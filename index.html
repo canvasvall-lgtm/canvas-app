@@ -5010,9 +5010,14 @@ function EnrollmentChart({
 function IncomeExpenseChart({
   months,
   income,
-  expense
+  expense,
+  incomeEstimate,
+  expenseEstimate
 }) {
-  const max = Math.max(1, ...months.map((_, i) => Math.max(income[i] || 0, expense[i] || 0)));
+  const allVals = months.map((_, i) => Math.max(income[i] || 0, expense[i] || 0, incomeEstimate && incomeEstimate[i] || 0, expenseEstimate && expenseEstimate[i] || 0));
+  const max = Math.max(1, ...allVals);
+  const stripedGreen = "repeating-linear-gradient(45deg, var(--verde), var(--verde) 3px, #bfe8d1 3px, #bfe8d1 6px)";
+  const stripedRed = "repeating-linear-gradient(45deg, var(--rojo), var(--rojo) 3px, #f7cccc 3px, #f7cccc 6px)";
   return React.createElement("div", null, React.createElement("div", {
     style: {
       display: "flex",
@@ -5022,50 +5027,57 @@ function IncomeExpenseChart({
       overflowX: "auto",
       paddingTop: 6
     }
-  }, months.map((label, i) => React.createElement("div", {
-    key: i,
-    style: {
-      display: "flex",
-      flexDirection: "column",
-      alignItems: "center",
-      minWidth: 44,
-      height: "100%",
-      justifyContent: "flex-end"
-    }
-  }, React.createElement("div", {
-    style: {
-      display: "flex",
-      alignItems: "flex-end",
-      gap: 3,
-      height: "100%"
-    }
-  }, React.createElement("div", {
-    style: {
-      width: 14,
-      height: `${Math.max(3, (income[i] || 0) / max * 90)}%`,
-      background: "var(--verde)",
-      borderRadius: "3px 3px 0 0"
-    }
-  }), React.createElement("div", {
-    style: {
-      width: 14,
-      height: `${Math.max(3, (expense[i] || 0) / max * 90)}%`,
-      background: "var(--rojo)",
-      borderRadius: "3px 3px 0 0"
-    }
+  }, months.map((label, i) => {
+    const isEstIncome = incomeEstimate && incomeEstimate[i] != null;
+    const isEstExpense = expenseEstimate && expenseEstimate[i] != null;
+    const incomeVal = isEstIncome ? incomeEstimate[i] : income[i] || 0;
+    const expenseVal = isEstExpense ? expenseEstimate[i] : expense[i] || 0;
+    return React.createElement("div", {
+      key: i,
+      style: {
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        minWidth: 44,
+        height: "100%",
+        justifyContent: "flex-end"
+      }
+    }, React.createElement("div", {
+      style: {
+        display: "flex",
+        alignItems: "flex-end",
+        gap: 3,
+        height: "100%"
+      }
+    }, React.createElement("div", {
+      style: {
+        width: 14,
+        height: `${Math.max(3, incomeVal / max * 90)}%`,
+        background: isEstIncome ? stripedGreen : "var(--verde)",
+        borderRadius: "3px 3px 0 0"
+      }
+    }), React.createElement("div", {
+      style: {
+        width: 14,
+        height: `${Math.max(3, expenseVal / max * 90)}%`,
+        background: isEstExpense ? stripedRed : "var(--rojo)",
+        borderRadius: "3px 3px 0 0"
+      }
+    })), React.createElement("div", {
+      style: {
+        fontSize: 10,
+        color: "var(--gris)",
+        marginTop: 4,
+        textAlign: "center"
+      }
+    }, label));
   })), React.createElement("div", {
-    style: {
-      fontSize: 10,
-      color: "var(--gris)",
-      marginTop: 4,
-      textAlign: "center"
-    }
-  }, label)))), React.createElement("div", {
     style: {
       display: "flex",
       gap: 14,
       fontSize: 12,
-      marginTop: 8
+      marginTop: 8,
+      flexWrap: "wrap"
     }
   }, React.createElement("span", null, React.createElement("span", {
     style: {
@@ -5085,7 +5097,16 @@ function IncomeExpenseChart({
       borderRadius: 2,
       marginRight: 4
     }
-  }), "Gastos")));
+  }), "Gastos"), React.createElement("span", null, React.createElement("span", {
+    style: {
+      display: "inline-block",
+      width: 10,
+      height: 10,
+      background: stripedGreen,
+      borderRadius: 2,
+      marginRight: 4
+    }
+  }), "Estimación")));
 }
 function SinceLastVisitPanel({
   profile,
@@ -5172,6 +5193,7 @@ function CEODashboard({
   familyMembers,
   withdrawals,
   profile,
+  recurringExpenses,
   reload
 }) {
   async function processWithdrawal(w) {
@@ -5253,6 +5275,18 @@ function CEODashboard({
     return FISCAL_MONTHS.map(m => Math.round((totals[m.year + "-" + m.month] || 0) * 100) / 100);
   }, [payments]);
   const expenseByMonth = FISCAL_MONTHS.map(m => expenses.filter(e => e.year === m.year && e.month === m.month).reduce((s, e) => s + e.amount, 0));
+  const activeMonthlyIncomeEstimate = useMemo(() => {
+    const withdrawingIds = new Set((withdrawals || []).map(w => w.student_id));
+    const studentsPart = enrolledStudents.filter(s => !withdrawingIds.has(s.id)).reduce((s, st) => s + (st.fee || 0), 0);
+    const familyPart = (familyMembers || []).reduce((s, f) => s + (f.fee || 0), 0);
+    return Math.round((studentsPart + familyPart) * 100) / 100;
+  }, [enrolledStudents, familyMembers, withdrawals]);
+  function estimatedExpenseForMonth(monthNum) {
+    return (recurringExpenses || []).filter(r => (r.months || []).includes(monthNum)).reduce((s, r) => s + r.amount, 0);
+  }
+  const currentKey = CY * 12 + CM;
+  const incomeEstimateByMonth = FISCAL_MONTHS.map(m => m.year * 12 + m.month > currentKey ? activeMonthlyIncomeEstimate : null);
+  const expenseEstimateByMonth = FISCAL_MONTHS.map(m => m.year * 12 + m.month > currentKey ? estimatedExpenseForMonth(m.month) : null);
   return React.createElement("div", null, React.createElement(CalendarInfoBanner, null), birthdaysToday.length > 0 && React.createElement("div", {
     className: "card",
     style: {
@@ -5487,10 +5521,18 @@ function CEODashboard({
     style: {
       marginTop: 0
     }
-  }, "💶 Ingresos y gastos por mes (", fiscalLabel, ")"), React.createElement(IncomeExpenseChart, {
+  }, "💶 Ingresos y gastos por mes (", fiscalLabel, ")"), React.createElement("p", {
+    style: {
+      fontSize: 12,
+      color: "var(--gris)",
+      marginTop: -4
+    }
+  }, "Las barras rayadas son una ", React.createElement("b", null, "estimación"), " de los meses futuros: ingresos según el alumnado activo hoy (sin bajas ya solicitadas) y gastos según tus gastos recurrentes definidos en la pestaña \"Gastos\". No tienen en cuenta altas o bajas que todavía no han pasado."), React.createElement(IncomeExpenseChart, {
     months: courseChartMonths,
     income: incomeByMonth,
-    expense: expenseByMonth
+    expense: expenseByMonth,
+    incomeEstimate: incomeEstimateByMonth,
+    expenseEstimate: expenseEstimateByMonth
   })));
 }
 
@@ -6147,6 +6189,11 @@ function PaymentsOverviewByGroup({
   onValidate,
   onMarkManual
 }) {
+  function extraFeeFor(studentId) {
+    return (extraEnrollments || []).filter(e => e.student_id === studentId)
+      .map(e => groups.find(g => g.id === e.group_id)?.fee || 0)
+      .reduce((s, f) => s + f, 0);
+  }
   const pendingBatches = {};
   payments.filter(p => p.status === "uploaded").forEach(p => {
     const key = p.student_id + "::" + (p.file_path || p.year + "-" + p.month);
@@ -6178,7 +6225,7 @@ function PaymentsOverviewByGroup({
       }
     }, name, " — sin cuenta en la app");
     const planType = p.payment_type || "monthly";
-    const monthlyFee = (p.fee || 0) + (extraFee || 0);
+    const monthlyFee = computeTotalFee(extraFee ? [p.fee||0, extraFee] : [p.fee||0]);
     const due = computeDueMonth(p, paymentsOf);
     const amountDue = planType === "monthly" ? monthlyFee : computePlanTotal(monthlyFee, planType, due.year, due.month);
     const planLabel = {
@@ -6220,7 +6267,7 @@ function PaymentsOverviewByGroup({
         fontWeight: 800,
         color: "var(--azul-oscuro)"
       }
-    }, amountDue, "€"), isPaid ? React.createElement("span", {
+    }, amountDue, "€ (", MN[due.month].slice(0,3), ")"), isPaid ? React.createElement("span", {
       className: "badge badge-ok"
     }, "Pagado (", MN[due.month].slice(0, 3), ")") : isUploaded ? React.createElement("span", {
       className: "badge badge-warn"
@@ -6270,11 +6317,19 @@ function PaymentsOverviewByGroup({
     const viaExtra = (extraEnrollments || []).filter(e => e.group_id === g.id).map(e => profiles.find(p => p.id === e.student_id)).filter(Boolean);
     const viaFamily = (familyMembers || []).filter(f => f.group_id === g.id);
     const groupLabel = `${DNF[g.day - 1]} ${g.time_start}-${g.time_end} · ${g.name}`;
-    [...direct, ...viaExtra].forEach(p => allRows.push({
+    direct.forEach(p => allRows.push({
       name: p.display_name,
       p,
       group: groupLabel,
-      extraFee: 0
+      extraFee: extraFeeFor(p.id)
+    }));
+    viaExtra.forEach(p => allRows.push({
+      name: p.display_name,
+      p,
+      group: groupLabel,
+      // Esta clase es "extra" para esta persona: si no tiene clase principal (p.fee vacío),
+      // su cuota real es la de ESTA clase, no un 0 fijo.
+      extraFee: g.fee
     }));
     viaFamily.forEach(fm => {
       const parent = profiles.find(p => p.id === fm.parent_id);
@@ -6411,7 +6466,7 @@ function PaymentsOverviewByGroup({
         marginBottom: 4,
         fontSize: 13
       }
-    }, DNF[g.day - 1], " ", g.time_start, "-", g.time_end, " · ", g.name), accountStudents.map(p => rowFor(p.display_name, p, payments.filter(pp => pp.student_id === p.id))), viaFamily.map(fm => {
+    }, DNF[g.day - 1], " ", g.time_start, "-", g.time_end, " · ", g.name), direct.map(p => rowFor(p.display_name, p, payments.filter(pp => pp.student_id === p.id), extraFeeFor(p.id))), viaExtra.map(p => rowFor(p.display_name, p, payments.filter(pp => pp.student_id === p.id), g.fee)), viaFamily.map(fm => {
       const parent = profiles.find(p => p.id === fm.parent_id);
       return rowFor(fm.display_name + " (familiar)", parent, parent ? payments.filter(pp => pp.student_id === parent.id) : []);
     }));
@@ -7809,12 +7864,293 @@ function VouchersView() {
     onClick: () => save(editing)
   }, "Guardar"))))));
 }
+function RecurringExpensesManager() {
+  const [items, setItems] = useState([]);
+  const [editing, setEditing] = useState(null);
+  function load() {
+    sb.from("recurring_expenses").select("*").order("id").then(({
+      data
+    }) => setItems(data || []));
+  }
+  useEffect(load, []);
+  function monthsToText(arr) {
+    return (arr || []).slice().sort((a, b) => a - b).map(m => MN[m].slice(0, 3)).join(", ");
+  }
+  function parseMonthsText(text) {
+    return text.split(",").map(s => parseInt(s.trim())).filter(n => n >= 1 && n <= 12);
+  }
+  async function save() {
+    const months = parseMonthsText(editing.monthsText);
+    if (!editing.concept || !editing.amount || months.length === 0) return;
+    const row = {
+      concept: editing.concept,
+      amount: parseFloat(editing.amount),
+      months
+    };
+    if (editing.id) await sb.from("recurring_expenses").update(row).eq("id", editing.id);else await sb.from("recurring_expenses").insert(row);
+    setEditing(null);
+    load();
+  }
+  async function remove(id) {
+    if (!window.confirm("¿Quitar este gasto recurrente de la estimación?")) return;
+    await sb.from("recurring_expenses").delete().eq("id", id);
+    load();
+  }
+  return React.createElement("div", {
+    className: "card",
+    style: {
+      marginBottom: 14
+    }
+  }, React.createElement("h4", {
+    style: {
+      marginTop: 0
+    }
+  }, "Gastos recurrentes (para la estimación futura)"), React.createElement("p", {
+    style: {
+      fontSize: 12,
+      color: "var(--gris)",
+      marginTop: -6
+    }
+  }, "No son gastos reales todavía — son una previsión para el gráfico económico. Cuando el gasto real ocurra, sigue registrándolo arriba como gasto normal."), items.map(it => React.createElement("div", {
+    key: it.id,
+    style: {
+      display: "flex",
+      justifyContent: "space-between",
+      alignItems: "center",
+      padding: "6px 0",
+      borderBottom: "1px solid #EEF2F8",
+      fontSize: 13
+    }
+  }, React.createElement("span", null, it.concept, " — ", React.createElement("b", null, it.amount, "€/mes"), " (", monthsToText(it.months), ")"), React.createElement("span", {
+    className: "row",
+    style: {
+      gap: 4
+    }
+  }, React.createElement("button", {
+    className: "btn-ghost",
+    style: {
+      padding: "3px 8px",
+      fontSize: 11
+    },
+    onClick: () => setEditing({
+      id: it.id,
+      concept: it.concept,
+      amount: it.amount,
+      monthsText: (it.months || []).join(",")
+    })
+  }, "Editar"), React.createElement("button", {
+    className: "btn-ghost",
+    style: {
+      padding: "3px 8px",
+      fontSize: 11
+    },
+    onClick: () => remove(it.id)
+  }, "Quitar")))), items.length === 0 && React.createElement("div", {
+    className: "empty"
+  }, "Sin gastos recurrentes definidos."), !editing ? React.createElement("button", {
+    className: "btn-ghost",
+    style: {
+      marginTop: 10
+    },
+    onClick: () => setEditing({
+      concept: "",
+      amount: "",
+      monthsText: ""
+    })
+  }, "+ Añadir gasto recurrente") : React.createElement("div", {
+    style: {
+      marginTop: 10,
+      background: "var(--fondo)",
+      borderRadius: 10,
+      padding: 12
+    }
+  }, React.createElement(Field, {
+    label: "Concepto"
+  }, React.createElement("input", {
+    value: editing.concept,
+    onChange: e => setEditing({
+      ...editing,
+      concept: e.target.value
+    })
+  })), React.createElement(Field, {
+    label: "Importe mensual (€)"
+  }, React.createElement("input", {
+    type: "number",
+    value: editing.amount,
+    onChange: e => setEditing({
+      ...editing,
+      amount: e.target.value
+    })
+  })), React.createElement(Field, {
+    label: "Meses en que aplica (números 1-12 separados por coma, ej: 10,11,12,1,2,3,4,5)"
+  }, React.createElement("input", {
+    value: editing.monthsText,
+    onChange: e => setEditing({
+      ...editing,
+      monthsText: e.target.value
+    }),
+    placeholder: "10,11,12,1,2,3,4,5"
+  })), React.createElement("div", {
+    className: "row"
+  }, React.createElement("button", {
+    className: "btn-ghost",
+    onClick: () => setEditing(null)
+  }, "Cancelar"), React.createElement("button", {
+    className: "btn-primary",
+    onClick: save
+  }, "Guardar"))));
+}
+const EXPENSE_CATEGORIES = ["Alquiler", "Autónomos", "Transporte", "Hacienda", "Gestoría", "Seguro", "Luz", "Gas", "Móvil", "Agua", "Limpieza", "Comunidad", "Profesoras", "Materiales", "Otros"];
+const HIST_CATEGORY_LABELS = {
+  alquiler: "Alquiler",
+  autonomos: "Autónomos",
+  transporte: "Transporte",
+  hacienda: "Hacienda",
+  gestoria: "Gestoría",
+  seguro: "Seguro",
+  luz: "Luz",
+  gas: "Gas",
+  movil: "Móvil",
+  agua: "Agua",
+  limpieza: "Limpieza",
+  comunidad: "Comunidad",
+  materiales: "Materiales"
+};
+function HistoricalFinanceView({
+  expenses,
+  payments
+}) {
+  const [history, setHistory] = useState([]);
+  const [compareMonth, setCompareMonth] = useState(CM);
+  useEffect(() => {
+    sb.from("historical_finance").select("*").order("year").order("month").then(({
+      data
+    }) => setHistory(data || []));
+  }, []);
+  const years = [...new Set(history.map(h => h.year))].sort();
+  const annualTotals = years.map(y => {
+    const rows = history.filter(h => h.year === y);
+    return {
+      year: y,
+      ingresos: Math.round(rows.reduce((s, r) => s + (r.total_ingresos || 0), 0) * 100) / 100,
+      gastos: Math.round(rows.reduce((s, r) => s + (r.total_gastos || 0), 0) * 100) / 100,
+      balance: Math.round(rows.reduce((s, r) => s + (r.balance || 0), 0) * 100) / 100
+    };
+  });
+  const categoryComparison = Object.entries(HIST_CATEGORY_LABELS).map(([key, label]) => {
+    const byYear = years.map(y => {
+      const row = history.find(h => h.year === y && h.month === compareMonth);
+      return {
+        year: y,
+        value: row ? row[key] : null
+      };
+    }).filter(v => v.value != null);
+    if (byYear.length === 0) return null;
+    const latest = byYear[byYear.length - 1];
+    const prior = byYear.slice(0, -1);
+    const priorAvg = prior.length > 0 ? prior.reduce((s, v) => s + v.value, 0) / prior.length : null;
+    let alert = null;
+    if (priorAvg != null && priorAvg > 0) {
+      const diffPct = (latest.value - priorAvg) / priorAvg * 100;
+      if (diffPct >= 25) alert = {
+        type: "up",
+        pct: Math.round(diffPct)
+      };else if (diffPct <= -25) alert = {
+        type: "down",
+        pct: Math.round(diffPct)
+      };
+    }
+    return {
+      label,
+      byYear,
+      latest,
+      priorAvg,
+      alert
+    };
+  }).filter(Boolean);
+  const alerts = categoryComparison.filter(c => c.alert);
+  return React.createElement("div", null, React.createElement("div", {
+    className: "card",
+    style: {
+      marginBottom: 14
+    }
+  }, React.createElement("h3", {
+    style: {
+      marginTop: 0
+    }
+  }, "Resumen por año (tu histórico importado)"), React.createElement("div", {
+    className: "table-wrap"
+  }, React.createElement("table", null, React.createElement("thead", null, React.createElement("tr", null, React.createElement("th", null, "Año"), React.createElement("th", null, "Ingresos"), React.createElement("th", null, "Gastos"), React.createElement("th", null, "Balance"))), React.createElement("tbody", null, annualTotals.map(a => React.createElement("tr", {
+    key: a.year
+  }, React.createElement("td", null, a.year), React.createElement("td", {
+    style: {
+      color: "var(--verde)"
+    }
+  }, a.ingresos, "€"), React.createElement("td", {
+    style: {
+      color: "var(--rojo)"
+    }
+  }, a.gastos, "€"), React.createElement("td", {
+    style: {
+      fontWeight: 700,
+      color: a.balance >= 0 ? "var(--verde)" : "var(--rojo)"
+    }
+  }, a.balance, "€")))))), React.createElement("p", {
+    style: {
+      fontSize: 11,
+      color: "var(--gris)",
+      marginTop: 8
+    }
+  }, CY, " está incompleto en tu histórico a partir de cuando empezaste a llevarlo en la app — compleméntalo con el dashboard para el curso actual.")), React.createElement("div", {
+    className: "card"
+  }, React.createElement("h3", {
+    style: {
+      marginTop: 0
+    }
+  }, "Comparativa por concepto, mes a mes entre años"), React.createElement(Field, {
+    label: "Mes a comparar"
+  }, React.createElement("select", {
+    value: compareMonth,
+    onChange: e => setCompareMonth(parseInt(e.target.value))
+  }, MN.slice(1).map((m, i) => React.createElement("option", {
+    key: m,
+    value: i + 1
+  }, m)))), alerts.length > 0 && React.createElement("div", {
+    style: {
+      background: "#FFF3D6",
+      border: "2px solid var(--mostaza)",
+      borderRadius: 10,
+      padding: 12,
+      marginBottom: 14
+    }
+  }, React.createElement("b", null, "⚠️ Avisos para ", MN[compareMonth], ":"), alerts.map((a, i) => React.createElement("div", {
+    key: i,
+    style: {
+      fontSize: 13,
+      marginTop: 4
+    }
+  }, a.alert.type === "up" ? "🔺" : "🔻", " ", React.createElement("b", null, a.label), ": ", a.latest.value, "€ en ", a.latest.year, ", un ", Math.abs(a.alert.pct), "% ", a.alert.type === "up" ? "más alto" : "más bajo", " que la media de años anteriores (", Math.round(a.priorAvg * 100) / 100, "€)"))), React.createElement("div", {
+    className: "table-wrap"
+  }, React.createElement("table", null, React.createElement("thead", null, React.createElement("tr", null, React.createElement("th", null, "Concepto"), years.map(y => React.createElement("th", {
+    key: y
+  }, y)))), React.createElement("tbody", null, categoryComparison.map((c, i) => React.createElement("tr", {
+    key: i
+  }, React.createElement("td", null, c.label, " ", c.alert && (c.alert.type === "up" ? "🔺" : "🔻")), years.map(y => {
+    const v = c.byYear.find(b => b.year === y);
+    return React.createElement("td", {
+      key: y
+    }, v ? v.value + "€" : "—");
+  })))))), categoryComparison.length === 0 && React.createElement("div", {
+    className: "empty"
+  }, "No hay datos de ese mes en tu histórico.")));
+}
 function ExpensesView({
   expenses,
   reload
 }) {
   const [concept, setConcept] = useState("");
   const [amount, setAmount] = useState("");
+  const [category, setCategory] = useState("Otros");
   const [expYear, setExpYear] = useState(CY);
   const [expMonth, setExpMonth] = useState(CM);
   const [viewYear, setViewYear] = useState(CY);
@@ -7826,7 +8162,8 @@ function ExpensesView({
       concept,
       amount: parseFloat(amount),
       month: expMonth,
-      year: expYear
+      year: expYear,
+      category
     });
     setConcept("");
     setAmount("");
@@ -7838,7 +8175,8 @@ function ExpensesView({
       concept: editing.concept,
       amount: parseFloat(editing.amount),
       month: editing.month,
-      year: editing.year
+      year: editing.year,
+      category: editing.category
     }).eq("id", editing.id);
     setEditing(null);
     reload();
@@ -7850,7 +8188,7 @@ function ExpensesView({
   }
   const monthExpenses = expenses.filter(e => e.year === viewYear && e.month === viewMonth);
   const monthTotal = monthExpenses.reduce((s, e) => s + e.amount, 0);
-  return React.createElement("div", null, React.createElement("div", {
+  return React.createElement("div", null, React.createElement(RecurringExpensesManager, null), React.createElement("div", {
     className: "card",
     style: {
       marginBottom: 14
@@ -7884,6 +8222,16 @@ function ExpensesView({
       alignItems: "flex-end"
     }
   }, React.createElement("div", {
+    className: "col"
+  }, React.createElement(Field, {
+    label: "Categoría"
+  }, React.createElement("select", {
+    value: category,
+    onChange: e => setCategory(e.target.value)
+  }, EXPENSE_CATEGORIES.map(c => React.createElement("option", {
+    key: c,
+    value: c
+  }, c))))), React.createElement("div", {
     className: "col"
   }, React.createElement(Field, {
     label: "Mes al que corresponde"
@@ -7932,9 +8280,9 @@ function ExpensesView({
   }, [CY - 1, CY, CY + 1].map(y => React.createElement("option", {
     key: y,
     value: y
-  }, y)))))), React.createElement("table", null, React.createElement("thead", null, React.createElement("tr", null, React.createElement("th", null, "Concepto"), React.createElement("th", null, "Importe"), React.createElement("th", null))), React.createElement("tbody", null, monthExpenses.map(e => React.createElement("tr", {
+  }, y)))))), React.createElement("table", null, React.createElement("thead", null, React.createElement("tr", null, React.createElement("th", null, "Concepto"), React.createElement("th", null, "Categoría"), React.createElement("th", null, "Importe"), React.createElement("th", null))), React.createElement("tbody", null, monthExpenses.map(e => React.createElement("tr", {
     key: e.id
-  }, React.createElement("td", null, e.concept), React.createElement("td", null, e.amount, "€"), React.createElement("td", {
+  }, React.createElement("td", null, e.concept), React.createElement("td", null, e.category || "—"), React.createElement("td", null, e.amount, "€"), React.createElement("td", {
     className: "row",
     style: {
       gap: 4
@@ -7950,7 +8298,8 @@ function ExpensesView({
       concept: e.concept,
       amount: e.amount,
       month: e.month,
-      year: e.year
+      year: e.year,
+      category: e.category || "Otros"
     })
   }, "Editar"), React.createElement("button", {
     className: "btn-ghost",
@@ -7985,6 +8334,17 @@ function ExpensesView({
       concept: e.target.value
     })
   })), React.createElement(Field, {
+    label: "Categoría"
+  }, React.createElement("select", {
+    value: editing.category,
+    onChange: e => setEditing({
+      ...editing,
+      category: e.target.value
+    })
+  }, EXPENSE_CATEGORIES.map(c => React.createElement("option", {
+    key: c,
+    value: c
+  }, c)))), React.createElement(Field, {
     label: "Importe (€)"
   }, React.createElement("input", {
     type: "number",
@@ -8052,6 +8412,7 @@ function CEOApp({
   const [extraEnrollments, setExtraEnrollments] = useState([]);
   const [withdrawals, setWithdrawals] = useState([]);
   const [familyMembers, setFamilyMembers] = useState([]);
+  const [recurringExpenses, setRecurringExpenses] = useState([]);
   function load() {
     sb.from("groups").select("*").order("day").then(({
       data
@@ -8083,9 +8444,12 @@ function CEOApp({
     sb.from("family_members").select("*").then(({
       data
     }) => setFamilyMembers(data || []));
+    sb.from("recurring_expenses").select("*").then(({
+      data
+    }) => setRecurringExpenses(data || []));
   }
   useEffect(load, []);
-  const tabs = [["dashboard", "Dashboard"], ["groups", "Clases"], ["students", "Alumnos"], ["payments", "Pagos"], ["stats", "Estadísticas"], ["teacherpay", "Pago profesoras"], ["workshops", "Talleres"], ["vouchers", "Bonos"], ["tienda", "Tienda"], ["expenses", "Gastos"], ["condiciones", "Condiciones"]];
+  const tabs = [["dashboard", "Dashboard"], ["groups", "Clases"], ["students", "Alumnos"], ["payments", "Pagos"], ["stats", "Estadísticas"], ["teacherpay", "Pago profesoras"], ["workshops", "Talleres"], ["vouchers", "Bonos"], ["tienda", "Tienda"], ["expenses", "Gastos"], ["historico", "Histórico"], ["condiciones", "Condiciones"]];
   return React.createElement("div", null, React.createElement("div", {
     className: "topbar"
   }, React.createElement(Logo, {
@@ -8114,6 +8478,7 @@ function CEOApp({
     familyMembers: familyMembers,
     withdrawals: withdrawals,
     profile: profile,
+    recurringExpenses: recurringExpenses,
     reload: load
   }), tab === "groups" && React.createElement(GroupsView, {
     groups: groups,
@@ -8151,6 +8516,9 @@ function CEOApp({
   }), tab === "workshops" && React.createElement(WorkshopsView, null), tab === "vouchers" && React.createElement(VouchersView, null), tab === "tienda" && React.createElement(MaterialsShopCEOView, null), tab === "expenses" && React.createElement(ExpensesView, {
     expenses: expenses,
     reload: load
+  }), tab === "historico" && React.createElement(HistoricalFinanceView, {
+    expenses: expenses,
+    payments: payments
   }), tab === "condiciones" && React.createElement(ConditionsAndPricingView, {
     groups: groups
   })));
