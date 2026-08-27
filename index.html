@@ -5353,6 +5353,15 @@ function CEODashboard({
   const currentKey = CY * 12 + CM;
   const incomeEstimateByMonth = FISCAL_MONTHS.map(m => m.year * 12 + m.month > currentKey ? activeMonthlyIncomeEstimate : null);
   const expenseEstimateByMonth = FISCAL_MONTHS.map(m => m.year * 12 + m.month > currentKey ? estimatedExpenseForMonth(m.year, m.month) : null);
+  const balanceFullYearEstimate = useMemo(() => {
+    let total = 0;
+    FISCAL_MONTHS.forEach((m, i) => {
+      const income = incomeEstimateByMonth[i] != null ? incomeEstimateByMonth[i] : incomeByMonth[i] || 0;
+      const expense = expenseEstimateByMonth[i] != null ? expenseEstimateByMonth[i] : expenseByMonth[i] || 0;
+      total += income - expense;
+    });
+    return Math.round(total * 100) / 100;
+  }, [incomeByMonth, expenseByMonth, incomeEstimateByMonth, expenseEstimateByMonth]);
   const incomeBySource = useMemo(() => {
     const clases = payments.filter(p => p.status === "validated" && FISCAL_MONTHS.some(m => m.year === p.year && m.month === p.month)).reduce((s, p) => s + (p.amount || 0), 0);
     const bonos = (flexPasses || []).filter(f => f.status === "validated").reduce((s, f) => s + (f.price_paid || 0), 0);
@@ -5457,7 +5466,7 @@ function CEODashboard({
       marginTop: -4,
       marginBottom: 8
     }
-  }, "Año de negocio considerado: ", React.createElement("b", null, fiscalLabel), " (de agosto a julio, para no perder ningún mes)"), React.createElement("div", {
+  }, "Año de negocio considerado: ", React.createElement("b", null, fiscalLabel), " (de agosto a julio, para no perder ningún mes). El \"balance real\" solo cuenta lo ya validado; el \"balance previsto\" añade la estimación de los meses que faltan (alumnado activo hoy y gastos recurrentes + profesoras)."), React.createElement("div", {
     className: "row",
     style: {
       marginBottom: 14
@@ -5501,7 +5510,20 @@ function CEODashboard({
       color: "var(--gris)",
       fontSize: 12
     }
-  }, "Balance (", fiscalLabel, ")")), React.createElement("div", {
+  }, "Balance real (hasta hoy, ", fiscalLabel, ")")), React.createElement("div", {
+    className: "col card"
+  }, React.createElement("div", {
+    style: {
+      fontSize: 24,
+      fontWeight: 800,
+      color: balanceFullYearEstimate >= 0 ? "var(--verde)" : "var(--rojo)"
+    }
+  }, balanceFullYearEstimate, "€"), React.createElement("div", {
+    style: {
+      color: "var(--gris)",
+      fontSize: 12
+    }
+  }, "Balance previsto (", fiscalLabel, " completo)")), React.createElement("div", {
     className: "col card"
   }, React.createElement("div", {
     style: {
@@ -8086,7 +8108,7 @@ function VouchersView() {
     onClick: () => save(editing)
   }, "Guardar"))))));
 }
-function RecurringExpensesManager() {
+function RecurringExpensesManager({onChanged}) {
   const [items, setItems] = useState([]);
   const [editing, setEditing] = useState(null);
   function load() {
@@ -8112,11 +8134,13 @@ function RecurringExpensesManager() {
     if (editing.id) await sb.from("recurring_expenses").update(row).eq("id", editing.id);else await sb.from("recurring_expenses").insert(row);
     setEditing(null);
     load();
+    if (onChanged) onChanged();
   }
   async function remove(id) {
     if (!window.confirm("¿Quitar este gasto recurrente de la estimación?")) return;
     await sb.from("recurring_expenses").delete().eq("id", id);
     load();
+    if (onChanged) onChanged();
   }
   return React.createElement("div", {
     className: "card",
@@ -8410,7 +8434,7 @@ function ExpensesView({
   }
   const monthExpenses = expenses.filter(e => e.year === viewYear && e.month === viewMonth);
   const monthTotal = monthExpenses.reduce((s, e) => s + e.amount, 0);
-  return React.createElement("div", null, React.createElement(RecurringExpensesManager, null), React.createElement("div", {
+  return React.createElement("div", null, React.createElement(RecurringExpensesManager, {onChanged: reload}), React.createElement("div", {
     className: "card",
     style: {
       marginBottom: 14
