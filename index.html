@@ -6832,7 +6832,12 @@ function computeRevenueShareForTeacher(teacherName, year, month, {groups, profil
   const myGroups = groups.filter(g => g.teacher === teacherName && g.pay_model === "revenue_share");
   let total = 0;
   const details = [];
+  const askedKey = year*12 + month;
   myGroups.forEach(g => {
+    if (g.start_date) {
+      const startKey = parseInt(g.start_date.slice(0,4))*12 + parseInt(g.start_date.slice(5,7));
+      if (askedKey < startKey) return; // esa clase todavía no había empezado ese mes
+    }
     const roster = effectiveRoster(g, profiles, extraEnrollments, familyMembers).length;
     const revenue = Math.round(roster * (g.fee||0) * 100) / 100;
     const pct = g.revenue_share_pct!=null ? g.revenue_share_pct : 0.75;
