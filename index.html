@@ -4443,7 +4443,10 @@ function MyHoursPanel({
   groups,
   attendance,
   rates,
-  tiers
+  tiers,
+  profiles,
+  extraEnrollments,
+  familyMembers
 }) {
   const [year, setYear] = useState(CY);
   const [month, setMonth] = useState(CM);
@@ -4458,7 +4461,14 @@ function MyHoursPanel({
     total: 0,
     sessions: 0
   };
+  const share = useMemo(() => computeRevenueShareForTeacher(teacherName, year, month, {
+    groups,
+    profiles,
+    extraEnrollments,
+    familyMembers
+  }), [teacherName, year, month, groups, profiles, extraEnrollments, familyMembers]);
   const rate = rates.find(r => r.teacher_name === teacherName)?.rate_per_hour;
+  const totalConReparto = mine.total + share.total;
   return React.createElement("div", {
     className: "card"
   }, React.createElement("h3", {
@@ -4528,22 +4538,51 @@ function MyHoursPanel({
       fontWeight: 800,
       color: "var(--verde)"
     }
-  }, mine.total.toFixed(2), "€"), React.createElement("div", {
+  }, totalConReparto.toFixed(2), "€"), React.createElement("div", {
     style: {
       color: "var(--gris)"
     }
-  }, "Total estimado"))), React.createElement("p", {
+  }, "Total estimado"))), share.details.length > 0 && React.createElement("div", {
+    className: "card",
+    style: {
+      marginTop: 14,
+      borderLeft: "4px solid var(--mostaza)",
+      background: "#FFF3D6"
+    }
+  }, React.createElement("h4", {
+    style: {
+      marginTop: 0
+    }
+  }, "💰 Reparto de ingresos (75% / 25%)"), React.createElement("p", {
+    style: {
+      fontSize: 13,
+      color: "#6a4b00"
+    }
+  }, "Estas clases se pagan de forma distinta: en vez de tarifa por hora, cobras el ", React.createElement("b", null, "75%"), " de lo que ingresa esa clase concreta, y la academia se queda el 25% restante."), share.details.map((det, i) => React.createElement("div", {
+    key: i,
+    style: {
+      fontSize: 13,
+      marginBottom: 4
+    }
+  }, React.createElement("b", null, det.group), ": ", det.roster, " alumnos × ", det.fee, "€/mes = ", det.revenue, "€ de ingresos → tu 75% son ", React.createElement("b", null, det.share, "€"))), React.createElement("div", {
+    style: {
+      fontWeight: 800,
+      fontSize: 18,
+      marginTop: 8,
+      color: "var(--mostaza)"
+    }
+  }, "Total por reparto: ", share.total.toFixed(2), "€")), React.createElement("p", {
     style: {
       fontSize: 12,
       color: "var(--gris)",
       marginTop: 10
     }
-  }, "Este cálculo se basa en las sesiones en las que has pasado lista. Si falta alguna, pásala y el total se actualizará solo."), React.createElement("h4", {
+  }, "Este cálculo se basa en las sesiones en las que has pasado lista (para tus clases por horas) y en el alumnado inscrito hoy (para tus clases de reparto de ingresos). Si falta alguna sesión por pasar lista, hazlo y el total se actualizará solo."), React.createElement("h4", {
     style: {
       marginTop: 16,
       marginBottom: 6
     }
-  }, "Detalle día a día"), React.createElement(TeacherDetailTable, {
+  }, "Detalle día a día (clases por horas)"), React.createElement(TeacherDetailTable, {
     teacherName: teacherName,
     year: year,
     month: month,
@@ -4717,7 +4756,10 @@ function TeacherApp({
     groups: groups,
     attendance: attendance,
     rates: rates,
-    tiers: tiers
+    tiers: tiers,
+    profiles: profiles,
+    extraEnrollments: extraEnrollments,
+    familyMembers: familyMembers
   }), tab === "condiciones" && React.createElement(ConditionsAndPricingView, {
     groups: groups
   })), session && React.createElement(SessionModal, {
@@ -5194,6 +5236,10 @@ function CEODashboard({
   withdrawals,
   profile,
   recurringExpenses,
+  rates,
+  tiers,
+  flexPasses,
+  workshopRegs,
   reload
 }) {
   async function processWithdrawal(w) {
@@ -5281,12 +5327,42 @@ function CEODashboard({
     const familyPart = (familyMembers || []).reduce((s, f) => s + (f.fee || 0), 0);
     return Math.round((studentsPart + familyPart) * 100) / 100;
   }, [enrolledStudents, familyMembers, withdrawals]);
-  function estimatedExpenseForMonth(monthNum) {
-    return (recurringExpenses || []).filter(r => (r.months || []).includes(monthNum)).reduce((s, r) => s + r.amount, 0);
+  function estimatedTeacherPayForMonth(year, monthNum) {
+    if (!rates || !tiers) return 0;
+    const hourly = TEACHERS.reduce((s, t) => s + estimateTeacherPay(t, year, monthNum, {
+      groups,
+      profiles,
+      extraEnrollments,
+      familyMembers,
+      rates,
+      tiers
+    }).total, 0);
+    const revShare = TEACHERS.reduce((s, t) => s + computeRevenueShareForTeacher(t, year, monthNum, {
+      groups,
+      profiles,
+      extraEnrollments,
+      familyMembers
+    }).total, 0);
+    return hourly + revShare;
+  }
+  function estimatedExpenseForMonth(year, monthNum) {
+    const recurring = (recurringExpenses || []).filter(r => (r.months || []).includes(monthNum)).reduce((s, r) => s + r.amount, 0);
+    const teacherPay = estimatedTeacherPayForMonth(year, monthNum);
+    return Math.round((recurring + teacherPay) * 100) / 100;
   }
   const currentKey = CY * 12 + CM;
   const incomeEstimateByMonth = FISCAL_MONTHS.map(m => m.year * 12 + m.month > currentKey ? activeMonthlyIncomeEstimate : null);
-  const expenseEstimateByMonth = FISCAL_MONTHS.map(m => m.year * 12 + m.month > currentKey ? estimatedExpenseForMonth(m.month) : null);
+  const expenseEstimateByMonth = FISCAL_MONTHS.map(m => m.year * 12 + m.month > currentKey ? estimatedExpenseForMonth(m.year, m.month) : null);
+  const incomeBySource = useMemo(() => {
+    const clases = payments.filter(p => p.status === "validated" && FISCAL_MONTHS.some(m => m.year === p.year && m.month === p.month)).reduce((s, p) => s + (p.amount || 0), 0);
+    const bonos = (flexPasses || []).filter(f => f.status === "validated").reduce((s, f) => s + (f.price_paid || 0), 0);
+    const talleres = (workshopRegs || []).filter(w => w.status === "validated").reduce((s, w) => s + (w.amount || 0), 0);
+    return {
+      clases: Math.round(clases * 100) / 100,
+      bonos: Math.round(bonos * 100) / 100,
+      talleres: Math.round(talleres * 100) / 100
+    };
+  }, [payments, flexPasses, workshopRegs]);
   return React.createElement("div", null, React.createElement(CalendarInfoBanner, null), birthdaysToday.length > 0 && React.createElement("div", {
     className: "card",
     style: {
@@ -5441,6 +5517,56 @@ function CEODashboard({
   }, "Ingreso medio / alumno"))), React.createElement("div", {
     className: "card",
     style: {
+      marginBottom: 14
+    }
+  }, React.createElement("h4", {
+    style: {
+      marginTop: 0
+    }
+  }, "Ingresos validados por origen (", fiscalLabel, ")"), React.createElement("div", {
+    className: "row"
+  }, React.createElement("div", {
+    className: "col"
+  }, React.createElement("div", {
+    style: {
+      fontSize: 18,
+      fontWeight: 800,
+      color: "var(--azul-oscuro)"
+    }
+  }, incomeBySource.clases, "€"), React.createElement("div", {
+    style: {
+      color: "var(--gris)",
+      fontSize: 12
+    }
+  }, "Clases (cuotas)")), React.createElement("div", {
+    className: "col"
+  }, React.createElement("div", {
+    style: {
+      fontSize: 18,
+      fontWeight: 800,
+      color: "var(--mostaza)"
+    }
+  }, incomeBySource.bonos, "€"), React.createElement("div", {
+    style: {
+      color: "var(--gris)",
+      fontSize: 12
+    }
+  }, "Bonos de clases")), React.createElement("div", {
+    className: "col"
+  }, React.createElement("div", {
+    style: {
+      fontSize: 18,
+      fontWeight: 800,
+      color: "var(--verde)"
+    }
+  }, incomeBySource.talleres, "€"), React.createElement("div", {
+    style: {
+      color: "var(--gris)",
+      fontSize: 12
+    }
+  }, "Talleres")))), React.createElement("div", {
+    className: "card",
+    style: {
       marginTop: 14
     }
   }, React.createElement("h3", {
@@ -5527,7 +5653,7 @@ function CEODashboard({
       color: "var(--gris)",
       marginTop: -4
     }
-  }, "Las barras rayadas son una ", React.createElement("b", null, "estimación"), " de los meses futuros: ingresos según el alumnado activo hoy (sin bajas ya solicitadas) y gastos según tus gastos recurrentes definidos en la pestaña \"Gastos\". No tienen en cuenta altas o bajas que todavía no han pasado."), React.createElement(IncomeExpenseChart, {
+  }, "Las barras rayadas son una ", React.createElement("b", null, "estimación"), " de los meses futuros: ingresos según el alumnado activo hoy (sin bajas ya solicitadas), y gastos sumando tus gastos recurrentes (pestaña \"Gastos\") ", React.createElement("b", null, "más el pago estimado a profesoras"), " de ese mes (calculado con el calendario escolar y el alumnado inscrito hoy). No tienen en cuenta altas o bajas que todavía no han pasado."), React.createElement(IncomeExpenseChart, {
     months: courseChartMonths,
     income: incomeByMonth,
     expense: expenseByMonth,
@@ -6663,6 +6789,7 @@ function computeTeacherPay(year, month, {
   sessions.forEach(s => {
     const g = groups.find(gg => gg.id === s.gid);
     if (!g) return;
+    if (g.pay_model === "revenue_share") return; // esta clase se paga por reparto de ingresos, no por horas
     const hours = hoursOfGroup(g);
     const rate = rates.find(r => r.teacher_name === g.teacher)?.rate_per_hour || 0;
     const bonus = tierBonusFor(g.current_count || 0, tiers);
@@ -6676,6 +6803,22 @@ function computeTeacherPay(year, month, {
     byTeacher[g.teacher].total += hours * (rate + bonus);
   });
   return byTeacher;
+}
+function computeRevenueShareForTeacher(teacherName, year, month, {groups, profiles, extraEnrollments, familyMembers}) {
+  // Para clases con modelo de reparto de ingresos (ej: Aerografía, Manos Creativas, Arte Textil):
+  // la profesora cobra un % de los ingresos reales de esa clase, no por horas dadas.
+  const myGroups = groups.filter(g => g.teacher === teacherName && g.pay_model === "revenue_share");
+  let total = 0;
+  const details = [];
+  myGroups.forEach(g => {
+    const roster = effectiveRoster(g, profiles, extraEnrollments, familyMembers).length;
+    const revenue = Math.round(roster * (g.fee||0) * 100) / 100;
+    const pct = g.revenue_share_pct!=null ? g.revenue_share_pct : 0.75;
+    const share = Math.round(revenue * pct * 100) / 100;
+    total += share;
+    details.push({group: g.name, roster, fee: g.fee, revenue, pct, share});
+  });
+  return {total: Math.round(total*100)/100, details};
 }
 function datesInMonthForWeekday(year, month, dayOfWeek, minDateISO) {
   const dates = [];
@@ -6700,7 +6843,7 @@ function estimateTeacherPay(teacherName, year, month, {
   rates,
   tiers
 }) {
-  const myGroups = groups.filter(g => g.teacher === teacherName);
+  const myGroups = groups.filter(g => g.teacher === teacherName && g.pay_model !== "revenue_share");
   const rate = rates.find(r => r.teacher_name === teacherName)?.rate_per_hour || 0;
   let sessions = 0,
     hours = 0,
@@ -6819,6 +6962,18 @@ function TeacherPayView({
     rates,
     tiers
   }), [year, month, groups, attendance, rates, tiers]);
+  const shareByTeacher = useMemo(() => {
+    const map = {};
+    TEACHERS.forEach(t => {
+      map[t] = computeRevenueShareForTeacher(t, year, month, {
+        groups,
+        profiles,
+        extraEnrollments,
+        familyMembers
+      });
+    });
+    return map;
+  }, [year, month, groups, profiles, extraEnrollments, familyMembers]);
   const estimates = useMemo(() => {
     const map = {};
     TEACHERS.forEach(t => {
@@ -6833,6 +6988,14 @@ function TeacherPayView({
     });
     return map;
   }, [year, month, groups, profiles, extraEnrollments, familyMembers, rates, tiers]);
+  function realTotalFor(t) {
+    return (byTeacher[t]?.total || 0) + (shareByTeacher[t]?.total || 0);
+  }
+  function estTotalFor(t) {
+    return (estimates[t]?.total || 0) + (shareByTeacher[t]?.total || 0);
+  }
+  const totalReal = TEACHERS.reduce((s, t) => s + realTotalFor(t), 0);
+  const totalEstimado = TEACHERS.reduce((s, t) => s + estTotalFor(t), 0);
   return React.createElement("div", null, React.createElement("div", {
     className: "row",
     style: {
@@ -6859,12 +7022,42 @@ function TeacherPayView({
   }, [CY - 1, CY, CY + 1].map(y => React.createElement("option", {
     key: y,
     value: y
-  }, y)))))), React.createElement("p", {
+  }, y)))))), React.createElement("div", {
+    className: "row",
+    style: {
+      marginBottom: 14
+    }
+  }, React.createElement("div", {
+    className: "col card"
+  }, React.createElement("div", {
+    style: {
+      fontSize: 22,
+      fontWeight: 800
+    }
+  }, totalReal.toFixed(2), "€"), React.createElement("div", {
+    style: {
+      color: "var(--gris)",
+      fontSize: 12
+    }
+  }, "Total pago profesoras — real ", MN[month], " ", year)), React.createElement("div", {
+    className: "col card"
+  }, React.createElement("div", {
+    style: {
+      fontSize: 22,
+      fontWeight: 800,
+      color: "var(--azul-oscuro)"
+    }
+  }, totalEstimado.toFixed(2), "€"), React.createElement("div", {
+    style: {
+      color: "var(--gris)",
+      fontSize: 12
+    }
+  }, "Total pago profesoras — estimado ", MN[month], " ", year))), React.createElement("p", {
     style: {
       fontSize: 13,
       color: "var(--gris)"
     }
-  }, "\"Real\" se calcula a partir de las sesiones con asistencia ya registrada. \"Estimación\" calcula, según el calendario escolar y el alumnado inscrito hoy, cuánto se prevé pagar ese mes si dan todas las clases previstas. Toca una tarjeta para ver el detalle día a día (real)."), TEACHERS.map(t => {
+  }, "\"Real\" se calcula a partir de las sesiones con asistencia ya registrada. \"Estimación\" calcula, según el calendario escolar y el alumnado inscrito hoy, cuánto se prevé pagar ese mes si dan todas las clases previstas — este total estimado ya se incluye automáticamente en los gastos previstos del Dashboard. Aerografía, Manos Creativas y Arte Textil se pagan por reparto de ingresos (75%/25%), no por horas — se suman igual al total. Toca una tarjeta para ver el detalle."), TEACHERS.map(t => {
     const d = byTeacher[t] || {
       hours: 0,
       total: 0,
@@ -6874,6 +7067,10 @@ function TeacherPayView({
       sessions: 0,
       hours: 0,
       total: 0
+    };
+    const share = shareByTeacher[t] || {
+      total: 0,
+      details: []
     };
     const open = detailTeacher === t;
     return React.createElement("div", {
@@ -6915,7 +7112,7 @@ function TeacherPayView({
         color: "var(--gris)",
         fontSize: 11
       }
-    }, "REAL este mes"), React.createElement("div", null, d.sessions, " sesiones · ", d.hours.toFixed(1), "h"), React.createElement("div", {
+    }, "REAL este mes (por horas)"), React.createElement("div", null, d.sessions, " sesiones · ", d.hours.toFixed(1), "h"), React.createElement("div", {
       style: {
         fontWeight: 800,
         fontSize: 16
@@ -6925,13 +7122,38 @@ function TeacherPayView({
         color: "var(--gris)",
         fontSize: 11
       }
-    }, "ESTIMACIÓN del mes"), React.createElement("div", null, est.sessions, " sesiones · ", est.hours, "h"), React.createElement("div", {
+    }, "ESTIMACIÓN del mes (por horas)"), React.createElement("div", null, est.sessions, " sesiones · ", est.hours, "h"), React.createElement("div", {
       style: {
         fontWeight: 800,
         fontSize: 16,
         color: "var(--azul-oscuro)"
       }
-    }, est.total, "€"))));
+    }, est.total, "€"))), share.details.length > 0 && React.createElement("div", {
+      style: {
+        marginTop: 10,
+        paddingTop: 10,
+        borderTop: "1px dashed #E2E8F0"
+      }
+    }, React.createElement("div", {
+      style: {
+        color: "var(--gris)",
+        fontSize: 11,
+        marginBottom: 4
+      }
+    }, "REPARTO DE INGRESOS (75% para ella / 25% para la academia)"), share.details.map((det, i) => React.createElement("div", {
+      key: i,
+      style: {
+        fontSize: 12,
+        marginBottom: 2
+      }
+    }, det.group, ": ", det.roster, " alumnos × ", det.fee, "€ = ", det.revenue, "€ → ", React.createElement("b", null, det.share, "€"), " para ", t)), React.createElement("div", {
+      style: {
+        fontWeight: 800,
+        fontSize: 16,
+        marginTop: 4,
+        color: "var(--mostaza)"
+      }
+    }, share.total.toFixed(2), "€")));
   }), detailTeacher && React.createElement("div", {
     className: "card",
     style: {
@@ -8413,6 +8635,8 @@ function CEOApp({
   const [withdrawals, setWithdrawals] = useState([]);
   const [familyMembers, setFamilyMembers] = useState([]);
   const [recurringExpenses, setRecurringExpenses] = useState([]);
+  const [flexPasses, setFlexPasses] = useState([]);
+  const [workshopRegs, setWorkshopRegs] = useState([]);
   function load() {
     sb.from("groups").select("*").order("day").then(({
       data
@@ -8447,9 +8671,65 @@ function CEOApp({
     sb.from("recurring_expenses").select("*").then(({
       data
     }) => setRecurringExpenses(data || []));
+    sb.from("flex_passes").select("*").then(({
+      data
+    }) => setFlexPasses(data || []));
+    sb.from("workshop_registrations").select("*").then(({
+      data
+    }) => setWorkshopRegs(data || []));
   }
   useEffect(load, []);
-  const tabs = [["dashboard", "Dashboard"], ["groups", "Clases"], ["students", "Alumnos"], ["payments", "Pagos"], ["stats", "Estadísticas"], ["teacherpay", "Pago profesoras"], ["workshops", "Talleres"], ["vouchers", "Bonos"], ["tienda", "Tienda"], ["expenses", "Gastos"], ["historico", "Histórico"], ["condiciones", "Condiciones"]];
+  const MENU = [{
+    key: "dashboard",
+    icon: "⌂",
+    label: "Dashboard",
+    single: "dashboard"
+  }, {
+    key: "alumnado",
+    icon: "◈",
+    label: "Alumnado",
+    subtabs: [["groups", "Clases"], ["students", "Alumnos"], ["stats", "Estadísticas"]]
+  }, {
+    key: "economico",
+    icon: "€",
+    label: "Económico",
+    subtabs: [["payments", "Pagos"], ["expenses", "Gastos"], ["historico", "Histórico"]]
+  }, {
+    key: "profesoras",
+    icon: "✎",
+    label: "Profesoras",
+    subtabs: [["teacherpay", "Pago profesoras"]]
+  }, {
+    key: "otros",
+    icon: "◆",
+    label: "Otros",
+    subtabs: [["workshops", "Talleres"], ["vouchers", "Bonos"], ["tienda", "Tienda"]]
+  }, {
+    key: "condiciones",
+    icon: "≡",
+    label: "Condiciones",
+    single: "condiciones"
+  }];
+  function groupOf(t) {
+    return MENU.find(g => g.single === t || g.subtabs && g.subtabs.some(([k]) => k === t)) || MENU[0];
+  }
+  const activeGroup = groupOf(tab);
+  function selectGroup(g) {
+    if (g.single) {
+      setTab(g.single);
+      return;
+    }
+    if (activeGroup.key === g.key) return;
+    const remembered = sessionStorage.getItem("canvas_subtab_" + g.key);
+    const valid = remembered && g.subtabs.some(([k]) => k === remembered);
+    setTab(valid ? remembered : g.subtabs[0][0]);
+  }
+  function selectSubtab(groupKey, k) {
+    setTab(k);
+    try {
+      sessionStorage.setItem("canvas_subtab_" + groupKey, k);
+    } catch (e) {}
+  }
   return React.createElement("div", null, React.createElement("div", {
     className: "topbar"
   }, React.createElement(Logo, {
@@ -8463,12 +8743,36 @@ function CEOApp({
   }, React.createElement("div", {
     className: "tabs",
     style: {
-      marginBottom: 16
+      marginBottom: activeGroup.subtabs ? 4 : 16
     }
-  }, tabs.map(([k, l]) => React.createElement("div", {
+  }, MENU.map(g => React.createElement("div", {
+    key: g.key,
+    className: "tab " + (activeGroup.key === g.key ? "active" : ""),
+    onClick: () => selectGroup(g),
+    style: {
+      display: "flex",
+      alignItems: "center",
+      gap: 5
+    }
+  }, React.createElement("span", {
+    style: {
+      fontSize: 15,
+      fontWeight: 400
+    }
+  }, g.icon), g.label))), activeGroup.subtabs && React.createElement("div", {
+    className: "tabs",
+    style: {
+      marginBottom: 16,
+      paddingLeft: 4
+    }
+  }, activeGroup.subtabs.map(([k, l]) => React.createElement("div", {
     key: k,
     className: "tab " + (tab === k ? "active" : ""),
-    onClick: () => setTab(k)
+    style: {
+      fontSize: 13,
+      padding: "6px 12px"
+    },
+    onClick: () => selectSubtab(activeGroup.key, k)
   }, l))), tab === "dashboard" && React.createElement(CEODashboard, {
     groups: groups,
     profiles: profiles,
@@ -8479,6 +8783,10 @@ function CEOApp({
     withdrawals: withdrawals,
     profile: profile,
     recurringExpenses: recurringExpenses,
+    rates: rates,
+    tiers: tiers,
+    flexPasses: flexPasses,
+    workshopRegs: workshopRegs,
     reload: load
   }), tab === "groups" && React.createElement(GroupsView, {
     groups: groups,
