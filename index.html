@@ -1126,6 +1126,10 @@ function PublicScheduleView({
 }
 function LoginScreen() {
   const [mode, setMode] = useState("login");
+  const [publicGroups, setPublicGroups] = useState([]);
+  useEffect(() => {
+    sb.from("groups").select("*").then(({data}) => setPublicGroups(data || []));
+  }, []);
   return React.createElement("div", {
     className: "container",
     style: {
@@ -1143,7 +1147,8 @@ function LoginScreen() {
     onRegister: () => setMode("register"),
     onTalleres: () => setMode("talleres"),
     onHorario: () => setMode("horario"),
-    onForgot: () => setMode("forgot")
+    onForgot: () => setMode("forgot"),
+    onCondiciones: () => setMode("condiciones")
   }), mode === "register" && React.createElement(RegisterForm, {
     onBack: () => setMode("login")
   }), mode === "talleres" && React.createElement(PublicWorkshopsView, {
@@ -1153,7 +1158,14 @@ function LoginScreen() {
     onRegister: () => setMode("register")
   }), mode === "forgot" && React.createElement(ForgotPasswordForm, {
     onBack: () => setMode("login")
-  }));
+  }), mode === "condiciones" && React.createElement("div", null,
+    React.createElement(ConditionsAndPricingView, {groups: publicGroups}),
+    React.createElement("button", {
+      className: "btn-ghost",
+      style: {width: "100%", marginTop: 14},
+      onClick: () => setMode("login")
+    }, "← Volver")
+  ));
 }
 function ForgotPasswordForm({
   onBack
@@ -1240,7 +1252,8 @@ function LoginForm({
   onRegister,
   onTalleres,
   onHorario,
-  onForgot
+  onForgot,
+  onCondiciones
 }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -1338,7 +1351,14 @@ function LoginForm({
       marginTop: 10
     },
     onClick: onTalleres
-  }, "🖼️ Ver talleres sin cuenta"));
+  }, "🖼️ Ver talleres sin cuenta"), React.createElement("button", {
+    className: "btn-ghost",
+    style: {
+      width: "100%",
+      marginTop: 10
+    },
+    onClick: onCondiciones
+  }, "📋 Ver precios y condiciones"));
 }
 function RegisterForm({
   onBack
@@ -1590,7 +1610,7 @@ function RegisterForm({
   if (step === "account") {
     return React.createElement("div", {
       className: "card"
-    }, isAugustNow && React.createElement("div", {
+    }, isAugustNow ? React.createElement("div", {
       style: {
         background: "var(--mostaza)",
         color: "#fff",
@@ -1600,7 +1620,17 @@ function RegisterForm({
         fontWeight: 700,
         textAlign: "center"
       }
-    }, "🎨 ¿Te inscribes en agosto? ¡Te regalamos la matrícula!"), React.createElement("h2", {
+    }, "🎨 ¿Te inscribes en agosto? ¡Te regalamos la matrícula!") : React.createElement("div", {
+      style: {
+        background: "var(--fondo)",
+        border: "2px solid var(--azul-claro)",
+        borderRadius: 12,
+        padding: "10px 14px",
+        marginBottom: 14,
+        fontSize: 13,
+        textAlign: "center"
+      }
+    }, "ℹ️ La matrícula de inscripción son ", React.createElement("b", null, STANDARD_ENROLLMENT_FEE, "€"), " — se paga junto con tu primera cuota."), React.createElement("h2", {
       style: {
         marginTop: 0,
         color: "var(--azul-oscuro)"
@@ -4948,104 +4978,108 @@ function BarChart({
 function EnrollmentChart({
   data
 }) {
-  const max = Math.max(1, ...data.map(d => Math.max(d.activos, d.nuevos)));
-  return React.createElement("div", null, React.createElement("div", {
+  const W = Math.max(400, data.length * 70);
+  const H = 160;
+  const padTop = 24,
+    padBottom = 24,
+    padSide = 20;
+  const maxActivos = Math.max(1, ...data.map(d => d.activos));
+  const maxNuevos = Math.max(1, ...data.map(d => d.nuevos));
+  const chartH = H - padTop - padBottom;
+  const stepX = (W - padSide * 2) / Math.max(1, data.length - 1);
+  const points = data.map((d, i) => {
+    const x = padSide + i * stepX;
+    const y = padTop + chartH - d.activos / maxActivos * chartH;
+    return {
+      x,
+      y,
+      val: d.activos
+    };
+  });
+  const linePath = points.map((p, i) => (i === 0 ? "M" : "L") + p.x.toFixed(1) + "," + p.y.toFixed(1)).join(" ");
+  const barW = Math.min(26, stepX * 0.4);
+  return React.createElement("div", {
     style: {
-      display: "flex",
-      alignItems: "flex-end",
-      gap: 10,
-      height: 130,
-      overflowX: "auto",
-      paddingTop: 6
+      overflowX: "auto"
     }
-  }, data.map((d, i) => React.createElement("div", {
-    key: i,
+  }, React.createElement("svg", {
+    viewBox: `0 0 ${W} ${H}`,
+    width: W,
+    height: H,
     style: {
-      display: "flex",
-      flexDirection: "column",
-      alignItems: "center",
-      minWidth: 50,
-      height: "100%",
-      justifyContent: "flex-end"
+      display: "block"
     }
-  }, React.createElement("div", {
-    style: {
-      display: "flex",
-      alignItems: "flex-end",
-      gap: 4,
-      height: "100%"
-    }
-  }, React.createElement("div", {
-    style: {
-      display: "flex",
-      flexDirection: "column",
-      alignItems: "center",
-      justifyContent: "flex-end",
-      height: "100%"
-    }
-  }, React.createElement("div", {
-    style: {
-      fontSize: 10,
-      fontWeight: 700
-    }
-  }, d.activos), React.createElement("div", {
-    style: {
-      width: 16,
-      height: `${Math.max(3, d.activos / max * 85)}%`,
-      background: "var(--azul-oscuro)",
-      borderRadius: "3px 3px 0 0"
-    }
-  })), React.createElement("div", {
-    style: {
-      display: "flex",
-      flexDirection: "column",
-      alignItems: "center",
-      justifyContent: "flex-end",
-      height: "100%"
-    }
-  }, React.createElement("div", {
-    style: {
-      fontSize: 10,
-      fontWeight: 700
-    }
-  }, d.nuevos), React.createElement("div", {
-    style: {
-      width: 16,
-      height: `${Math.max(3, d.nuevos / max * 85)}%`,
-      background: "var(--mostaza)",
-      borderRadius: "3px 3px 0 0"
-    }
-  }))), React.createElement("div", {
-    style: {
-      fontSize: 10,
-      color: "var(--gris)",
-      marginTop: 4,
-      textAlign: "center"
-    }
-  }, d.label)))), React.createElement("div", {
+  }, data.map((d, i) => {
+    const x = padSide + i * stepX - barW / 2;
+    const barH = Math.max(2, d.nuevos / maxNuevos * chartH * 0.6);
+    const y = H - padBottom - barH;
+    return React.createElement("g", {
+      key: "bar" + i
+    }, React.createElement("rect", {
+      x: x,
+      y: y,
+      width: barW,
+      height: barH,
+      fill: "var(--mostaza)",
+      rx: "3"
+    }), d.nuevos > 0 && React.createElement("text", {
+      x: x + barW / 2,
+      y: y - 4,
+      fontSize: "9",
+      textAnchor: "middle",
+      fill: "var(--mostaza)",
+      fontWeight: "700"
+    }, d.nuevos), React.createElement("text", {
+      x: padSide + i * stepX,
+      y: H - 6,
+      fontSize: "10",
+      textAnchor: "middle",
+      fill: "var(--gris)"
+    }, d.label));
+  }), React.createElement("path", {
+    d: linePath,
+    fill: "none",
+    stroke: "var(--azul-oscuro)",
+    strokeWidth: "2.5"
+  }), points.map((p, i) => React.createElement("g", {
+    key: "pt" + i
+  }, React.createElement("circle", {
+    cx: p.x,
+    cy: p.y,
+    r: "4",
+    fill: "var(--azul-oscuro)"
+  }), React.createElement("text", {
+    x: p.x,
+    y: p.y - 8,
+    fontSize: "10",
+    fontWeight: "700",
+    textAnchor: "middle",
+    fill: "var(--azul-oscuro)"
+  }, p.val)))), React.createElement("div", {
     style: {
       display: "flex",
       gap: 14,
       fontSize: 12,
-      marginTop: 8
+      marginTop: 4
     }
   }, React.createElement("span", null, React.createElement("span", {
     style: {
       display: "inline-block",
-      width: 10,
-      height: 10,
+      width: 16,
+      height: 2,
       background: "var(--azul-oscuro)",
-      borderRadius: 2,
-      marginRight: 4
+      marginRight: 4,
+      verticalAlign: "middle"
     }
-  }), "Alumnos activos (acumulado)"), React.createElement("span", null, React.createElement("span", {
+  }), "Alumnos activos (evolución)"), React.createElement("span", null, React.createElement("span", {
     style: {
       display: "inline-block",
       width: 10,
       height: 10,
       background: "var(--mostaza)",
       borderRadius: 2,
-      marginRight: 4
+      marginRight: 4,
+      verticalAlign: "middle"
     }
   }), "Altas nuevas ese mes")));
 }
@@ -5065,9 +5099,9 @@ function IncomeExpenseChart({
       display: "flex",
       alignItems: "flex-end",
       gap: 10,
-      height: 130,
+      height: 170,
       overflowX: "auto",
-      paddingTop: 6
+      paddingTop: 24
     }
   }, months.map((label, i) => {
     const isEstIncome = incomeEstimate && incomeEstimate[i] != null;
@@ -5080,7 +5114,7 @@ function IncomeExpenseChart({
         display: "flex",
         flexDirection: "column",
         alignItems: "center",
-        minWidth: 44,
+        minWidth: 50,
         height: "100%",
         justifyContent: "flex-end"
       }
@@ -5093,19 +5127,49 @@ function IncomeExpenseChart({
       }
     }, React.createElement("div", {
       style: {
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "flex-end",
+        height: "100%"
+      }
+    }, React.createElement("div", {
+      style: {
+        fontSize: 9,
+        fontWeight: 700,
+        color: "var(--verde)",
+        whiteSpace: "nowrap"
+      }
+    }, incomeVal, "€"), React.createElement("div", {
+      style: {
         width: 14,
         height: `${Math.max(3, incomeVal / max * 90)}%`,
         background: isEstIncome ? stripedGreen : "var(--verde)",
         borderRadius: "3px 3px 0 0"
       }
-    }), React.createElement("div", {
+    })), React.createElement("div", {
+      style: {
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "flex-end",
+        height: "100%"
+      }
+    }, React.createElement("div", {
+      style: {
+        fontSize: 9,
+        fontWeight: 700,
+        color: "var(--rojo)",
+        whiteSpace: "nowrap"
+      }
+    }, expenseVal, "€"), React.createElement("div", {
       style: {
         width: 14,
         height: `${Math.max(3, expenseVal / max * 90)}%`,
         background: isEstExpense ? stripedRed : "var(--rojo)",
         borderRadius: "3px 3px 0 0"
       }
-    })), React.createElement("div", {
+    }))), React.createElement("div", {
       style: {
         fontSize: 10,
         color: "var(--gris)",
@@ -5226,6 +5290,48 @@ function SinceLastVisitPanel({
   }, "⚠️ ", React.createElement("b", null, incompleteN), " se ", incompleteN !== 1 ? "han" : "ha", " quedado a medias (cuenta creada, sin elegir clase todavía)")));
 }
 
+function BalanceExplainer() {
+  const [open, setOpen] = useState(false);
+  return React.createElement("div", {
+    className: "card",
+    style: {
+      marginBottom: 14
+    }
+  }, React.createElement("div", {
+    style: {
+      display: "flex",
+      justifyContent: "space-between",
+      alignItems: "center",
+      cursor: "pointer"
+    },
+    onClick: () => setOpen(o => !o)
+  }, React.createElement("h4", {
+    style: {
+      margin: 0
+    }
+  }, "❓ ¿Cómo se calcula el balance?"), React.createElement("button", {
+    className: "btn-ghost",
+    style: {
+      padding: "4px 10px",
+      fontSize: 12
+    }
+  }, open ? "Ocultar" : "Ver explicación")), open && React.createElement("div", {
+    style: {
+      fontSize: 13,
+      marginTop: 10,
+      lineHeight: 1.6
+    }
+  }, React.createElement("p", null, "Se calcula sobre un \"año de negocio\" de ", React.createElement("b", null, "agosto a julio"), " (12 meses), no el curso escolar (sept-jun) — así no se pierde ningún gasto de agosto ni de julio."), React.createElement("p", null, React.createElement("b", null, "Balance real"), " = Ingresos validados (pagos ya marcados como \"Pagado\") − Gastos (lo que has metido en la pestaña Gastos). Solo cuenta lo que ya ha pasado de verdad; los meses futuros no suman nada aquí."), React.createElement("p", null, React.createElement("b", null, "Balance previsto"), " = lo mismo para los meses ya pasados, pero para los meses ", React.createElement("b", null, "futuros"), " añade una estimación:"), React.createElement("ul", {
+    style: {
+      margin: "4px 0 4px 18px",
+      padding: 0
+    }
+  }, React.createElement("li", null, "Ingreso estimado de un mes futuro = la cuota de cada alumno activo ", React.createElement("b", null, "hoy"), " (sin contar bajas ya solicitadas), incluidos los familiares"), React.createElement("li", null, "Gasto estimado de un mes futuro = tus gastos recurrentes (alquiler, autónomos...) + el pago estimado a profesoras ese mes (según el calendario escolar y quién está inscrito hoy)")), React.createElement("p", {
+    style: {
+      color: "var(--gris)"
+    }
+  }, "Ninguno de los dos es \"más correcto\" — el real te dice cómo vas ahora mismo; el previsto te da una foto de cómo podría acabar el año si nada cambia (altas o bajas que aún no han pasado no se pueden prever).")));
+}
 function CEODashboard({
   groups,
   profiles,
@@ -5455,7 +5561,18 @@ function CEODashboard({
       color: "var(--gris)",
       fontSize: 12
     }
-  }, "Con pago validado"))), React.createElement("h3", {
+  }, "Con pago validado"))), React.createElement("div", {
+    className: "card",
+    style: {
+      marginBottom: 14
+    }
+  }, React.createElement("h3", {
+    style: {
+      marginTop: 0
+    }
+  }, "📈 Alumnos activos y altas nuevas (curso completo: agosto-junio)"), React.createElement(EnrollmentChart, {
+    data: enrollmentChartData
+  })), React.createElement("h3", {
     style: {
       marginBottom: 8
     }
@@ -5469,7 +5586,7 @@ function CEODashboard({
   }, "Año de negocio considerado: ", React.createElement("b", null, fiscalLabel), " (de agosto a julio, para no perder ningún mes). El \"balance real\" solo cuenta lo ya validado; el \"balance previsto\" añade la estimación de los meses que faltan (alumnado activo hoy y gastos recurrentes + profesoras)."), React.createElement("div", {
     className: "row",
     style: {
-      marginBottom: 14
+      marginBottom: 8
     }
   }, React.createElement("div", {
     className: "col card"
@@ -5536,7 +5653,7 @@ function CEODashboard({
       color: "var(--gris)",
       fontSize: 12
     }
-  }, "Ingreso medio / alumno"))), React.createElement("div", {
+  }, "Ingreso medio / alumno"))), React.createElement(BalanceExplainer, null), React.createElement("div", {
     className: "card",
     style: {
       marginBottom: 14
@@ -5649,17 +5766,6 @@ function CEODashboard({
       },
       onClick: () => processWithdrawal(w)
     }, "Marcar gestionada"));
-  })), React.createElement("div", {
-    className: "card",
-    style: {
-      marginTop: 14
-    }
-  }, React.createElement("h3", {
-    style: {
-      marginTop: 0
-    }
-  }, "📈 Alumnos activos y altas nuevas (curso completo: agosto-junio)"), React.createElement(EnrollmentChart, {
-    data: enrollmentChartData
   })), React.createElement("div", {
     className: "card",
     style: {
