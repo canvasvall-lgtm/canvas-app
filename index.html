@@ -3890,7 +3890,16 @@ function StudentApp({
   const allPaidUp = dueInfo === null;
   const thisMonthPayment = dueInfo ? payments.find(p => p.year === duePaymentYear && p.month === duePaymentMonth) : null;
   const myGroupIds = [profile.group_id, ...extraGroups.map(g => g.id)].filter(Boolean);
-  const monthlyFee = computeTotalFee([profile.fee, ...extraGroups.map(g => g.fee), ...familyMembers.map(f => f.fee)]);
+  function hasStartedForDue(group){
+    if(!group || !group.start_date || !dueInfo) return true;
+    const startKey = parseInt(group.start_date.slice(0,4))*12 + parseInt(group.start_date.slice(5,7));
+    return startKey <= (dueInfo.year*12 + dueInfo.month);
+  }
+  const monthlyFee = computeTotalFee([
+    profile.fee,
+    ...extraGroups.filter(hasStartedForDue).map(g => g.fee),
+    ...familyMembers.filter(f => hasStartedForDue(allGroups.find(g => g.id === f.group_id))).map(f => f.fee)
+  ]);
   const [planType, setPlanType] = useState(profile.payment_type || "monthly");
   const [planMsg, setPlanMsg] = useState("");
   async function changePlanType(newType) {
@@ -6812,9 +6821,15 @@ function PaymentsOverviewByGroup({
   onValidate,
   onMarkManual
 }) {
-  function extraFeeFor(studentId) {
-    const extraClasses = (extraEnrollments || []).filter(e => e.student_id === studentId).map(e => groups.find(g => g.id === e.group_id)?.fee || 0).reduce((s, f) => s + f, 0);
-    const familyFees = (familyMembers || []).filter(f => f.parent_id === studentId).reduce((s, f) => s + (f.fee || 0), 0);
+  function extraFeeFor(studentId, asOfYear, asOfMonth) {
+    const asOfKey = asOfYear * 12 + asOfMonth;
+    function hasStarted(group) {
+      if (!group || !group.start_date) return true;
+      const startKey = parseInt(group.start_date.slice(0, 4)) * 12 + parseInt(group.start_date.slice(5, 7));
+      return startKey <= asOfKey;
+    }
+    const extraClasses = (extraEnrollments || []).filter(e => e.student_id === studentId).map(e => groups.find(g => g.id === e.group_id)).filter(g => hasStarted(g)).reduce((s, g) => s + (g.fee || 0), 0);
+    const familyFees = (familyMembers || []).filter(f => f.parent_id === studentId).filter(f => hasStarted(groups.find(g => g.id === f.group_id))).reduce((s, f) => s + (f.fee || 0), 0);
     return extraClasses + familyFees;
   }
   const pendingBatches = {};
@@ -6829,13 +6844,33 @@ function PaymentsOverviewByGroup({
   const pendingValidation = Object.values(pendingBatches);
   const [showPendingList, setShowPendingList] = useState(false);
   const [loadingIds, setLoadingIds] = useState({});
-  async function handleValidate(id, filePath){
-    setLoadingIds(prev=>({...prev,[id]:true}));
-    try { await onValidate(id, filePath); } finally { setLoadingIds(prev=>({...prev,[id]:false})); }
+  async function handleValidate(id, filePath) {
+    setLoadingIds(prev => ({
+      ...prev,
+      [id]: true
+    }));
+    try {
+      await onValidate(id, filePath);
+    } finally {
+      setLoadingIds(prev => ({
+        ...prev,
+        [id]: false
+      }));
+    }
   }
-  async function handleMarkManual(p){
-    setLoadingIds(prev=>({...prev,[p.id]:true}));
-    try { await onMarkManual(p); } finally { setLoadingIds(prev=>({...prev,[p.id]:false})); }
+  async function handleMarkManual(p) {
+    setLoadingIds(prev => ({
+      ...prev,
+      [p.id]: true
+    }));
+    try {
+      await onMarkManual(p);
+    } finally {
+      setLoadingIds(prev => ({
+        ...prev,
+        [p.id]: false
+      }));
+    }
   }
   const [sortMode, setSortMode] = useState("group");
   const sortedGroups = [...groups].sort((a, b) => a.day - b.day || a.time_start.localeCompare(b.time_start));
@@ -6849,7 +6884,7 @@ function PaymentsOverviewByGroup({
   function familyNamesFor(studentId) {
     return (familyMembers || []).filter(f => f.parent_id === studentId).map(f => f.display_name);
   }
-  function rowFor(name, p, paymentsOf, extraFee) {
+  function rowFor(name, p, paymentsOf) {
     if (!p) return React.createElement("div", {
       key: name,
       style: {
@@ -6859,19 +6894,45 @@ function PaymentsOverviewByGroup({
         color: "var(--gris)"
       }
     }, name, " — sin cuenta en la app");
-    const planType = p.payment_type || "monthly";
-    const monthlyFee = computeTotalFee(extraFee ? [p.fee || 0, extraFee] : [p.fee || 0]);
     const due = computeDueMonth(p, paymentsOf);
     const family = familyNamesFor(p.id);
     if (!due) {
-      return React.createElement("div", {key:name, style:{padding:"8px 0",borderBottom:"1px solid #EEF2F8"}},
-        React.createElement("div", {style:{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,flexWrap:"wrap"}},
-          React.createElement("span", {style:{fontSize:13,fontWeight:600,minWidth:150}}, name, family.length>0 && React.createElement("span",{style:{fontWeight:400,color:"var(--gris)"}}," (+ ",family.join(", "),")")),
-          React.createElement("span", {className:"badge badge-ok"}, "✅ Curso completo pagado")
-        ),
-        React.createElement(PaymentProgressCalendar, {payments: paymentsOf, enrollStartYear: p.enrollment_start_year, enrollStartMonth: p.enrollment_start_month})
-      );
+      return React.createElement("div", {
+        key: name,
+        style: {
+          padding: "8px 0",
+          borderBottom: "1px solid #EEF2F8"
+        }
+      }, React.createElement("div", {
+        style: {
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 10,
+          flexWrap: "wrap"
+        }
+      }, React.createElement("span", {
+        style: {
+          fontSize: 13,
+          fontWeight: 600,
+          minWidth: 150
+        }
+      }, name, family.length > 0 && React.createElement("span", {
+        style: {
+          fontWeight: 400,
+          color: "var(--gris)"
+        }
+      }, " (+ ", family.join(", "), ")")), React.createElement("span", {
+        className: "badge badge-ok"
+      }, "✅ Curso completo pagado")), React.createElement(PaymentProgressCalendar, {
+        payments: paymentsOf,
+        enrollStartYear: p.enrollment_start_year,
+        enrollStartMonth: p.enrollment_start_month
+      }));
     }
+    const extraFee = extraFeeFor(p.id, due.year, due.month);
+    const planType = p.payment_type || "monthly";
+    const monthlyFee = computeTotalFee(extraFee ? [p.fee || 0, extraFee] : [p.fee || 0]);
     const amountDue = planType === "monthly" ? monthlyFee : computePlanTotal(monthlyFee, planType, due.year, due.month);
     const planLabel = {
       monthly: "Mensual",
@@ -6974,8 +7035,7 @@ function PaymentsOverviewByGroup({
   flexStudents.forEach(p => allRows.push({
     name: p.display_name,
     p,
-    group: "🔄 Suscripción flexible",
-    extraFee: extraFeeFor(p.id)
+    group: "🔄 Suscripción flexible"
   }));
   sortedGroups.forEach(g => {
     const direct = profiles.filter(p => p.role === "student" && p.group_id === g.id);
@@ -6984,8 +7044,7 @@ function PaymentsOverviewByGroup({
     [...direct, ...viaExtra].forEach(p => allRows.push({
       name: p.display_name,
       p,
-      group: groupLabel,
-      extraFee: extraFeeFor(p.id)
+      group: groupLabel
     }));
   });
   return React.createElement("div", {
@@ -7080,7 +7139,7 @@ function PaymentsOverviewByGroup({
     onClick: () => setSortMode("az")
   }, "A-Z"))), sortMode === "az" ? React.createElement("div", {
     className: "card"
-  }, allRows.sort((a, b) => a.name.localeCompare(b.name)).map(r => rowFor(r.name, r.p, payments.filter(pp => pp.student_id === r.p?.id), r.extraFee))) : React.createElement(React.Fragment, null, flexStudents.length > 0 && React.createElement("div", {
+  }, allRows.sort((a, b) => a.name.localeCompare(b.name)).map(r => rowFor(r.name, r.p, payments.filter(pp => pp.student_id === r.p?.id)))) : React.createElement(React.Fragment, null, flexStudents.length > 0 && React.createElement("div", {
     className: "card",
     style: {
       marginBottom: 10,
@@ -7093,7 +7152,7 @@ function PaymentsOverviewByGroup({
       marginBottom: 4,
       fontSize: 13
     }
-  }, "🔄 Suscripción flexible"), flexStudents.map(p => rowFor(p.display_name, p, payments.filter(pp => pp.student_id === p.id), extraFeeFor(p.id)))), sortedGroups.map(g => {
+  }, "🔄 Suscripción flexible"), flexStudents.map(p => rowFor(p.display_name, p, payments.filter(pp => pp.student_id === p.id)))), sortedGroups.map(g => {
     const direct = profiles.filter(p => p.role === "student" && p.group_id === g.id);
     const viaExtra = (extraEnrollments || []).filter(e => e.group_id === g.id).map(e => profiles.find(p => p.id === e.student_id)).filter(Boolean);
     const viaFamily = (familyMembers || []).filter(f => f.group_id === g.id);
@@ -7113,7 +7172,7 @@ function PaymentsOverviewByGroup({
         marginBottom: 4,
         fontSize: 13
       }
-    }, DNF[g.day - 1], " ", g.time_start, "-", g.time_end, " · ", g.name), accountStudents.map(p => rowFor(p.display_name, p, payments.filter(pp => pp.student_id === p.id), extraFeeFor(p.id))), viaFamily.map(fm => {
+    }, DNF[g.day - 1], " ", g.time_start, "-", g.time_end, " · ", g.name), accountStudents.map(p => rowFor(p.display_name, p, payments.filter(pp => pp.student_id === p.id))), viaFamily.map(fm => {
       const parent = profiles.find(p => p.id === fm.parent_id);
       return familyInfoRow(fm, parent);
     }));
@@ -7139,12 +7198,21 @@ function PaymentsView({
     await q;
     await reload();
   }
-  function realFeeFor(s) {
-    // La cuota real incluye clases extra y familiares dados de alta bajo su cuenta, con el 5% si aplica
+  function realFeeFor(s, asOfYear, asOfMonth) {
+    // La cuota real incluye clases extra y familiares, pero solo si esa clase concreta ya ha
+    // empezado para el mes que se está calculando (respeta el caso de Luz/Patry/Inge en octubre).
+    const asOfKey = asOfYear*12 + asOfMonth;
+    function hasStarted(group){
+      if(!group || !group.start_date) return true;
+      const startKey = parseInt(group.start_date.slice(0,4))*12 + parseInt(group.start_date.slice(5,7));
+      return startKey <= asOfKey;
+    }
     const extraClasses = (extraEnrollments || []).filter(e => e.student_id === s.id)
-      .map(e => groups.find(g => g.id === e.group_id)?.fee || 0)
-      .reduce((sum, f) => sum + f, 0);
+      .map(e => groups.find(g => g.id === e.group_id))
+      .filter(g => hasStarted(g))
+      .reduce((sum, g) => sum + (g.fee||0), 0);
     const familyFees = (familyMembers || []).filter(f => f.parent_id === s.id)
+      .filter(f => hasStarted(groups.find(g => g.id === f.group_id)))
       .reduce((sum, f) => sum + (f.fee || 0), 0);
     const extra = extraClasses + familyFees;
     return computeTotalFee(extra ? [s.fee || 0, extra] : [s.fee || 0]);
@@ -7157,7 +7225,7 @@ function PaymentsView({
     }
     const planType = s.payment_type || "monthly";
     const planMonths = monthsForPlan(planType, due.year, due.month);
-    const realFee = realFeeFor(s);
+    const realFee = realFeeFor(s, due.year, due.month);
     const total = planType === "monthly" ? realFee : computePlanTotal(realFee, planType, due.year, due.month);
     const label = planType === "monthly" ? `la cuota de ${MN[due.month]} ${due.year}` : `su plan ${planType === "quarterly" ? "trimestral" : "de curso completo"}, que cubre desde ${MN[due.month]} ${due.year} (${planMonths.length} meses)`;
     if (!window.confirm(`¿Confirmas que ${s.display_name} ha pagado ${label} — total ${total}€ — por WhatsApp/efectivo u otra vía fuera de la app?`)) return;
