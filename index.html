@@ -862,10 +862,15 @@ function PublicWorkshopsView({
   const [file, setFile] = useState(null);
   const [sending, setSending] = useState(false);
   const [msg, setMsg] = useState("");
+  const [workshopsError, setWorkshopsError] = useState(null);
   useEffect(() => {
     sb.from("workshops").select("*").order("start_date").then(({
-      data
-    }) => setWorkshops(data || []));
+      data,
+      error
+    }) => {
+      if (error) { setWorkshopsError(error.message); setWorkshops([]); return; }
+      setWorkshops(data || []);
+    });
   }, []);
   function openRegister(w) {
     setRegistering(w);
@@ -956,7 +961,9 @@ function PublicWorkshopsView({
       marginTop: 0,
       color: "var(--azul-oscuro)"
     }
-  }, "Talleres y campamentos 🎨"), workshops === null && React.createElement("div", {
+  }, "Talleres y campamentos 🎨"), workshopsError && React.createElement("div", {
+    style: {background:"#FCE7E7",border:"2px solid var(--rojo)",borderRadius:10,padding:12,fontSize:13,color:"var(--rojo)",marginBottom:10}
+  }, "⚠️ No se han podido cargar los talleres: ", workshopsError), workshops === null && React.createElement("div", {
     className: "loader"
   }), workshops && workshops.length === 0 && React.createElement("div", {
     className: "empty"
@@ -1079,10 +1086,15 @@ function PublicScheduleView({
   onRegister
 }) {
   const [groups, setGroups] = useState(null);
+  const [loadError, setLoadError] = useState(null);
   useEffect(() => {
     sb.from("groups").select("*").order("day").then(({
-      data
-    }) => setGroups(data || []));
+      data,
+      error
+    }) => {
+      if (error) { setLoadError(error.message); setGroups([]); return; }
+      setGroups(data || []);
+    });
   }, []);
   return React.createElement("div", {
     className: "card"
@@ -1096,9 +1108,11 @@ function PublicScheduleView({
       fontSize: 13,
       color: "var(--gris)"
     }
-  }, "Así de lleno o de libre está cada grupo ahora mismo. Cuando encuentres el que te venga bien, puedes inscribirte directamente."), groups === null && React.createElement("div", {
+  }, "Así de lleno o de libre está cada grupo ahora mismo. Cuando encuentres el que te venga bien, puedes inscribirte directamente."), loadError && React.createElement("div", {
+    style: {background:"#FCE7E7",border:"2px solid var(--rojo)",borderRadius:10,padding:12,fontSize:13,color:"var(--rojo)",marginBottom:10}
+  }, "⚠️ No se ha podido cargar el horario: ", loadError), groups === null && React.createElement("div", {
     className: "loader"
-  }), groups && groups.length === 0 && React.createElement("div", {
+  }), groups && groups.length === 0 && !loadError && React.createElement("div", {
     className: "empty"
   }, "Todavía no hay clases publicadas."), groups && groups.length > 0 && React.createElement(WeeklyTimetable, {
     groups: groups,
@@ -5853,14 +5867,19 @@ function CEODashboard({
   const avgRevenuePerStudent = activeStudentsCount > 0 ? Math.round(validated / activeStudentsCount * 100) / 100 : 0;
   const STUDENT_CHART_MONTHS = monthsCoveredFrom(COURSE_START_YEAR, 8, 11);
   const enrollmentChartData = useMemo(() => {
-    const before = enrolledStudents.filter(s => {
+    // Personas activas de verdad: cuentas propias + familiares (una mamá con un hijo apuntado cuentan como 2)
+    const allPeople = [
+      ...enrolledStudents.map(s => ({created_at: s.created_at})),
+      ...(familyMembers||[]).map(f => ({created_at: f.created_at}))
+    ];
+    const before = allPeople.filter(s => {
       if (!s.created_at) return false;
       const cd = new Date(s.created_at);
       const key = cd.getFullYear() * 12 + (cd.getMonth() + 1);
       const firstKey = STUDENT_CHART_MONTHS[0].year * 12 + STUDENT_CHART_MONTHS[0].month;
       return key < firstKey;
     }).length;
-    // Bajas ya efectivas antes del primer mes del gráfico, para no arrastrar de más en el acumulado inicial
+    // Bajas ya efectivas antes del primer mes del gráfico (solo cuentas propias tienen este flujo formal)
     const withdrawalsBefore = (allWithdrawals||[]).filter(w => {
       const key = w.effective_year*12 + w.effective_month;
       const firstKey = STUDENT_CHART_MONTHS[0].year * 12 + STUDENT_CHART_MONTHS[0].month;
@@ -5868,7 +5887,7 @@ function CEODashboard({
     }).length;
     let cumulative = before - withdrawalsBefore;
     return STUDENT_CHART_MONTHS.map(m => {
-      const nuevos = enrolledStudents.filter(s => {
+      const nuevos = allPeople.filter(s => {
         if (!s.created_at) return false;
         const cd = new Date(s.created_at);
         return cd.getFullYear() === m.year && cd.getMonth() + 1 === m.month;
@@ -5883,7 +5902,7 @@ function CEODashboard({
         activos: Math.max(0, cumulative)
       };
     });
-  }, [enrolledStudents, allWithdrawals]);
+  }, [enrolledStudents, familyMembers, allWithdrawals]);
   const courseChartMonths = FISCAL_MONTHS.map(m => MN[m.month].slice(0, 3) + " " + String(m.year).slice(2));
   const incomeByMonth = useMemo(() => {
     const totals = {};
@@ -6063,7 +6082,7 @@ function CEODashboard({
     style: {
       marginTop: 0
     }
-  }, "📈 Alumnos activos y altas nuevas (curso completo: agosto-junio)"), React.createElement(EnrollmentChart, {
+  }, "📈 Alumnos activos (con familiares) y altas nuevas (curso completo: agosto-junio)"), React.createElement(EnrollmentChart, {
     data: enrollmentChartData
   })), React.createElement("h3", {
     style: {
