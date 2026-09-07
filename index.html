@@ -2567,12 +2567,16 @@ function RecoveryBookingPanel({
     }
   }, msg));
 }
-function CalendarInfoBanner() {
+function CalendarInfoBanner({enrollmentStartYear,enrollmentStartMonth}) {
   const inCourse = todayISO >= COURSE_START && todayISO <= COURSE_END;
   const closureToday = SCHOOL_CLOSURES.find(c => todayISO >= c.start && todayISO <= c.end);
   const upcoming = nextClosure(todayISO);
   let msg;
-  if (!inCourse && todayISO < COURSE_START) {
+  const hasLaterStart = enrollmentStartYear && enrollmentStartMonth &&
+    (enrollmentStartYear*12+enrollmentStartMonth) > (COURSE_START_YEAR*12+parseInt(COURSE_START.slice(5,7)));
+  if (hasLaterStart) {
+    msg = `Tu clase concreta empieza en ${MN[enrollmentStartMonth]} de ${enrollmentStartYear} — más tarde que el resto del curso, no te preocupes si tu clase no ha empezado aún.`;
+  } else if (!inCourse && todayISO < COURSE_START) {
     const d = new Date(COURSE_START + "T00:00:00");
     msg = `Las clases del nuevo curso empiezan el ${d.getDate()} de ${MN[d.getMonth() + 1]} de ${d.getFullYear()}, siguiendo el calendario escolar de Castilla y León.`;
   } else if (closureToday) {
@@ -4192,7 +4196,7 @@ function StudentApp({
       color: "var(--azul-oscuro)",
       marginBottom: 10
     }
-  }, "¡Hola, ", profile.display_name.split(" ")[0], "! 👋"), myGroupIds.length > 0 && React.createElement(CalendarInfoBanner, null), React.createElement("div", {
+  }, "¡Hola, ", profile.display_name.split(" ")[0], "! 👋"), myGroupIds.length > 0 && React.createElement(CalendarInfoBanner, {enrollmentStartYear: profile.enrollment_start_year, enrollmentStartMonth: profile.enrollment_start_month}), React.createElement("div", {
     className: "tabs",
     style: {
       marginBottom: 14
@@ -4223,7 +4227,7 @@ function StudentApp({
     style: {
       marginBottom: 14
     }
-  }, group ? React.createElement(React.Fragment, null, React.createElement("div", {style:{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8}},
+  }, profile.group_id ? (group ? React.createElement(React.Fragment, null, React.createElement("div", {style:{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8}},
     React.createElement("p", {style:{margin:0}}, "Tu clase: ", React.createElement("b", null, group.name), " — ", DNF[group.day - 1], " ", group.time_start, "-", group.time_end, " con ", React.createElement("b", {
     style: {
       color: classColor(group.name)
@@ -4245,7 +4249,7 @@ function StudentApp({
       marginTop: 8,
       fontSize: 13
     }
-  }, "📅 Esta clase concreta empieza el ", React.createElement("b", null, group.start_date), " (más tarde que el resto del curso) — tu primer pago es el de ", MN[profile.enrollment_start_month || parseInt(group.start_date.slice(5, 7))], ", no septiembre.")) : profile.enrollment_mode === "flex" ? React.createElement("div", {
+  }, "📅 Esta clase concreta empieza el ", React.createElement("b", null, group.start_date), " (más tarde que el resto del curso) — tu primer pago es el de ", MN[profile.enrollment_start_month || parseInt(group.start_date.slice(5, 7))], ", no septiembre.")) : React.createElement("div", {style:{fontSize:13,color:"var(--gris)"}}, "Cargando los datos de tu clase…")) : profile.enrollment_mode === "flex" ? React.createElement("div", {
     style: {
       background: "#E4F7EC",
       border: "2px solid var(--verde)",
