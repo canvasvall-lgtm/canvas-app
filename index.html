@@ -360,6 +360,22 @@ function effectiveRoster(g, profilesArr, extraEnrollments, familyMembers) {
   const extra3 = (familyMembers || []).filter(f => f.group_id === g.id).map(f => f.display_name);
   return [...(g.students || []), ...extra, ...extra2, ...extra3];
 }
+function dayAttendees(g, date, {profiles, extraEnrollments, familyMembers, allBookings, allCancellations}) {
+  // Alumnado fijo de esa clase, menos quien haya cancelado justo ese día
+  const cancelledNames = (allCancellations||[]).filter(c => c.group_id===g.id && c.session_date===date)
+    .map(c => (profiles||[]).find(p=>p.id===c.student_id)?.display_name).filter(Boolean);
+  const fixedRoster = effectiveRoster(g, profiles, extraEnrollments, familyMembers)
+    .filter(name => !cancelledNames.includes(name))
+    .map(name => ({name, type:"fija"}));
+  // Alumnado que ha reservado esa sesión concreta (flexible, bono, o recuperación)
+  const bookedRoster = (allBookings||[]).filter(b => b.group_id===g.id && b.session_date===date).map(b => {
+    const p = (profiles||[]).find(pp=>pp.id===b.student_id);
+    const label = b.booking_type==="flex" ? "flexible" : b.booking_type==="bono" ? "bono" : "recuperación";
+    return {name: p?.display_name || "Alumno/a desconocido", type: label};
+  });
+  return [...fixedRoster, ...bookedRoster];
+}
+
 function nextOccurrences(dayOfWeek, count = 3) {
   const dates = [];
   const startFrom = todayISO < COURSE_START ? COURSE_START + "T00:00:00" : NOW.toISOString();
@@ -4623,7 +4639,27 @@ function SessionModal({
   teacherName,
   onClose
 }) {
-  const roster = effectiveRoster(group, profiles, extraEnrollments, familyMembers);
+  const [allBookings, setAllBookings] = useState([]);
+  const [allCancellations, setAllCancellations] = useState([]);
+  useEffect(() => {
+    sb.from("session_bookings").select("*").eq("group_id", group.id).eq("session_date", date).is("cancelled_at", null).then(({
+      data
+    }) => setAllBookings(data || []));
+    sb.from("session_cancellations").select("*").eq("group_id", group.id).eq("session_date", date).then(({
+      data
+    }) => setAllCancellations(data || []));
+  }, []);
+  const attendees = dayAttendees(group, date, {
+    profiles,
+    extraEnrollments,
+    familyMembers,
+    allBookings,
+    allCancellations
+  });
+  const roster = attendees.map(a => a.name);
+  function attendeeType(name) {
+    return attendees.find(a => a.name === name)?.type || "fija";
+  }
   const [status, setStatus] = useState({});
   const [cash, setCash] = useState({});
   const [saving, setSaving] = useState(false);
@@ -4709,6 +4745,7 @@ function SessionModal({
   }, "No hay alumnos en esta clase todavía."), roster.map(name => {
     const p = studentProfileFor(name);
     const pendingDue = cashPendingInfo(p);
+    const type = attendeeType(name);
     return React.createElement("div", {
       key: name,
       style: {
@@ -4721,7 +4758,15 @@ function SessionModal({
         justifyContent: "space-between",
         alignItems: "center"
       }
-    }, React.createElement("span", null, name), React.createElement("div", {
+    }, React.createElement("span", null, name, " ", type !== "fija" && React.createElement("span", {
+      className: "badge",
+      style: {
+        background: type === "flexible" ? "#E4F7EC" : type === "bono" ? "#FFF3D6" : "#E8F0FA",
+        color: type === "flexible" ? "var(--verde)" : type === "bono" ? "#6a4b00" : "var(--azul-oscuro)",
+        fontSize: 10,
+        marginLeft: 4
+      }
+    }, type)), React.createElement("div", {
       className: "row",
       style: {
         gap: 6
@@ -9728,6 +9773,131 @@ function ExpensesView({
     onClick: saveEdit
   }, "Guardar")))));
 }
+function DailyScheduleView({
+  groups,
+  profiles,
+  extraEnrollments,
+  familyMembers
+}) {
+  const [date, setDate] = useState(todayISO);
+  const [allBookings, setAllBookings] = useState([]);
+  const [allCancellations, setAllCancellations] = useState([]);
+  useEffect(() => {
+    sb.from("session_bookings").select("*").eq("session_date", date).is("cancelled_at", null).then(({
+      data
+    }) => setAllBookings(data || []));
+    sb.from("session_cancellations").select("*").eq("session_date", date).then(({
+      data
+    }) => setAllCancellations(data || []));
+  }, [date]);
+  const d = new Date(date + "T00:00:00");
+  const jsDow = d.getDay();
+  const dow = jsDow === 0 ? 7 : jsDow;
+  const closed = !isSchoolDay(date);
+  const classesToday = groups.filter(g => {
+    if (g.day !== dow) return false;
+    if (g.start_date && date < g.start_date) return false;
+    return true;
+  }).sort((a, b) => a.time_start.localeCompare(b.time_start));
+  function shiftDate(deltaDays) {
+    const nd = new Date(date + "T00:00:00");
+    nd.setDate(nd.getDate() + deltaDays);
+    setDate(toLocalISO(nd));
+  }
+  return React.createElement("div", null, React.createElement("div", {
+    className: "row",
+    style: {
+      marginBottom: 14,
+      alignItems: "flex-end",
+      gap: 10
+    }
+  }, React.createElement("button", {
+    className: "btn-ghost",
+    onClick: () => shiftDate(-1)
+  }, "← Día anterior"), React.createElement("div", {
+    className: "col"
+  }, React.createElement(Field, {
+    label: "Ver el día"
+  }, React.createElement("input", {
+    type: "date",
+    value: date,
+    onChange: e => setDate(e.target.value)
+  }))), React.createElement("button", {
+    className: "btn-ghost",
+    onClick: () => shiftDate(1)
+  }, "Día siguiente →"), React.createElement("button", {
+    className: "btn-ghost",
+    onClick: () => setDate(todayISO)
+  }, "Hoy")), React.createElement("h3", {
+    style: {
+      marginBottom: 8
+    }
+  }, DNF[dow - 1], " ", d.getDate(), " de ", MN[d.getMonth() + 1], " de ", d.getFullYear()), closed && React.createElement("div", {
+    className: "card",
+    style: {
+      borderLeft: "4px solid var(--mostaza)"
+    }
+  }, "No hay clase ningún día — ", SCHOOL_CLOSURES.find(c => date >= c.start && date <= c.end)?.label || "fuera del calendario escolar", "."), !closed && classesToday.length === 0 && React.createElement("div", {
+    className: "empty"
+  }, "No hay ninguna clase programada este día."), !closed && classesToday.map(g => {
+    const attendees = dayAttendees(g, date, {
+      profiles,
+      extraEnrollments,
+      familyMembers,
+      allBookings,
+      allCancellations
+    });
+    const cap = capOf(g);
+    return React.createElement("div", {
+      key: g.id,
+      className: "card",
+      style: {
+        marginBottom: 12,
+        borderLeft: `4px solid ${classColor(g.name)}`
+      }
+    }, React.createElement("div", {
+      style: {
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "center",
+        flexWrap: "wrap",
+        gap: 6
+      }
+    }, React.createElement("div", {
+      style: {
+        fontWeight: 800,
+        color: "var(--azul-oscuro)"
+      }
+    }, g.time_start, "-", g.time_end, " · ", g.name, " · ", g.teacher), React.createElement("div", {
+      style: {
+        fontSize: 13,
+        color: "var(--gris)"
+      }
+    }, attendees.length, "/", cap, " asistentes previstos")), attendees.length === 0 && React.createElement("div", {
+      style: {
+        fontSize: 13,
+        color: "var(--gris)",
+        marginTop: 6
+      }
+    }, "Nadie previsto todavía."), attendees.map((a, i) => React.createElement("div", {
+      key: i,
+      style: {
+        display: "flex",
+        justifyContent: "space-between",
+        padding: "4px 0",
+        borderBottom: "1px solid #EEF2F8",
+        fontSize: 13
+      }
+    }, React.createElement("span", null, a.name), a.type !== "fija" && React.createElement("span", {
+      className: "badge",
+      style: {
+        background: a.type === "flexible" ? "#E4F7EC" : a.type === "bono" ? "#FFF3D6" : "#E8F0FA",
+        color: a.type === "flexible" ? "var(--verde)" : a.type === "bono" ? "#6a4b00" : "var(--azul-oscuro)",
+        fontSize: 10
+      }
+    }, a.type))));
+  }));
+}
 function CEOApp({
   profile,
   onLogout
@@ -9781,7 +9951,7 @@ function CEOApp({
     key: "alumnado",
     icon: "◈",
     label: "Alumnado",
-    subtabs: [["groups", "Clases"], ["students", "Alumnos"], ["stats", "Estadísticas"]]
+    subtabs: [["groups", "Clases"], ["daily", "Calendario del día"], ["students", "Alumnos"], ["stats", "Estadísticas"]]
   }, {
     key: "economico",
     icon: "€",
@@ -9888,6 +10058,11 @@ function CEOApp({
     extraEnrollments: extraEnrollments,
     familyMembers: familyMembers,
     reload: load
+  }), tab === "daily" && React.createElement(DailyScheduleView, {
+    groups: groups,
+    profiles: profiles,
+    extraEnrollments: extraEnrollments,
+    familyMembers: familyMembers
   }), tab === "students" && React.createElement(StudentsDirectoryView, {
     groups: groups,
     profiles: profiles,
