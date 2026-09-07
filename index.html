@@ -3288,6 +3288,7 @@ function FlexBookingPanel({
   const [selected, setSelected] = useState("");
   const [useType, setUseType] = useState("flex");
   const [msg, setMsg] = useState("");
+  const [cancellingId, setCancellingId] = useState(null);
   function load() {
     sb.from("session_bookings").select("*").eq("student_id", profile.id).is("cancelled_at", null).then(({
       data
@@ -3337,6 +3338,7 @@ function FlexBookingPanel({
       if (!isSchoolDay(date)) return;
       groups.forEach(g => {
         if (g.day !== dow) return;
+        if (g.start_date && date < g.start_date) return;
         if (hoursUntil(date, g.time_start) < 3) return;
         if (spotsFor(g, date) <= 0) return;
         (m[date] = m[date] || []).push(g);
@@ -3364,9 +3366,7 @@ function FlexBookingPanel({
       group_id: selectedInfo.group.id,
       session_date: selectedInfo.date
     };
-    if (useType === "flex") {
-      row.booking_type = "flex";
-    } else {
+    if (useType === "flex") row.booking_type = "flex";else {
       row.booking_type = "bono";
       row.flex_pass_id = parseInt(useType);
     }
@@ -3379,9 +3379,19 @@ function FlexBookingPanel({
       load();
     }
   }
+  async function cancelBooking(b) {
+    if (!window.confirm("¿Seguro que quieres cancelar esta reserva?")) return;
+    setCancellingId(b.id);
+    await sb.from("session_bookings").update({
+      cancelled_at: new Date().toISOString()
+    }).eq("id", b.id);
+    setCancellingId(null);
+    load();
+  }
   const firstDate = new Date(weekDates[0] + "T00:00:00");
   const lastDate = new Date(weekDates[4] + "T00:00:00");
   if (!isFlex && activePasses.length === 0 && passes.length === 0) return null;
+  const myUpcoming = bookings.filter(b => b.session_date >= todayISO).sort((a, b) => a.session_date.localeCompare(b.session_date));
   return React.createElement("div", {
     className: "card",
     style: {
@@ -3402,7 +3412,51 @@ function FlexBookingPanel({
       fontSize: 13,
       color: "var(--gris)"
     }
-  }, "Bono ", p.pass_type === "bono5" ? "de 5" : "de 10", ": te quedan ", React.createElement("b", null, p.total_sessions - p.sessions_used), " sesiones (caduca el ", p.valid_until, ").")), React.createElement(Field, {
+  }, "Bono ", p.pass_type === "bono5" ? "de 5" : "de 10", ": te quedan ", React.createElement("b", null, p.total_sessions - p.sessions_used), " sesiones (caduca el ", p.valid_until, ").")), React.createElement("div", {
+    style: {
+      background: "var(--fondo)",
+      borderRadius: 10,
+      padding: 12,
+      marginBottom: 14
+    }
+  }, React.createElement("h4", {
+    style: {
+      marginTop: 0,
+      marginBottom: 8
+    }
+  }, "Mis próximas reservas"), myUpcoming.length === 0 && React.createElement("p", {
+    style: {
+      fontSize: 13,
+      color: "var(--gris)",
+      margin: 0
+    }
+  }, "No tienes ninguna reserva próxima todavía — resérvala en el calendario de abajo."), myUpcoming.map(b => {
+    const g = groups.find(gg => gg.id === b.group_id);
+    return React.createElement("div", {
+      key: b.id,
+      style: {
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "center",
+        padding: "6px 0",
+        borderBottom: "1px solid #E2E8F0",
+        fontSize: 13
+      }
+    }, React.createElement("span", null, React.createElement("b", null, g?.name || "Clase"), " — ", b.session_date, " · ", g?.time_start, " · ", g?.teacher, " ", b.booking_type === "bono" && React.createElement("span", {
+      style: {
+        color: "var(--mostaza)"
+      }
+    }, "(bono)")), React.createElement("button", {
+      className: "btn-ghost",
+      style: {
+        padding: "3px 8px",
+        fontSize: 11,
+        color: "var(--rojo)"
+      },
+      disabled: cancellingId === b.id,
+      onClick: () => cancelBooking(b)
+    }, cancellingId === b.id ? "Cancelando…" : "Cancelar"));
+  })), React.createElement(Field, {
     label: "¿Con qué quieres reservar?"
   }, React.createElement("select", {
     value: useType,
