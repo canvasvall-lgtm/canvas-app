@@ -3995,7 +3995,8 @@ function StudentApp({
     }).eq("id", profile.id);
     setPlanMsg(error ? "❌ " + error.message : "✅ Periodicidad actualizada.");
   }
-  const totalFee = planType === "monthly" ? monthlyFee : computePlanTotal(monthlyFee, planType, duePaymentYear, duePaymentMonth);
+  const pendingEnrollmentFee = (profile.enrollment_fee>0 && !profile.enrollment_fee_paid) ? profile.enrollment_fee : 0;
+  const totalFee = (planType === "monthly" ? monthlyFee : computePlanTotal(monthlyFee, planType, duePaymentYear, duePaymentMonth)) + pendingEnrollmentFee;
   const planMonths = monthsForPlan(planType, duePaymentYear, duePaymentMonth).length;
   const hasDiscount = 1 + extraGroups.length + familyMembers.length >= 2;
   async function addClass(g) {
@@ -4134,6 +4135,7 @@ function StudentApp({
         filename: file.name,
         file_path: path,
         amount: i === 0 ? totalFee : 0,
+        enrollment_fee_included: i === 0 ? pendingEnrollmentFee : 0,
         upload_date: todayISO
       }));
       const {
@@ -4462,7 +4464,7 @@ function StudentApp({
       fontSize: 14,
       marginTop: 10
     }
-  }, "Cuota", familyMembers.length > 0 ? ` (incluye a ${familyMembers.map(f => f.display_name.split(" ")[0]).join(", ")})` : "", hasDiscount ? " — con 5% dto. por varias clases" : "", planType !== "monthly" ? ` — plan ${planType === "quarterly" ? "trimestral" : "curso completo"}, cubre ${planMonths} meses` : "", ": ", React.createElement("b", null, totalFee, "€"), ". Transferencia al IBAN: ", React.createElement("b", null, IBAN), " (titular: Laura Sanz)."), React.createElement("p", {
+  }, "Cuota", familyMembers.length > 0 ? ` (incluye a ${familyMembers.map(f => f.display_name.split(" ")[0]).join(", ")})` : "", hasDiscount ? " — con 5% dto. por varias clases" : "", planType !== "monthly" ? ` — plan ${planType === "quarterly" ? "trimestral" : "curso completo"}, cubre ${planMonths} meses` : "", pendingEnrollmentFee > 0 ? ` — incluye ${pendingEnrollmentFee}€ de matrícula` : "", ": ", React.createElement("b", null, totalFee, "€"), ". Transferencia al IBAN: ", React.createElement("b", null, IBAN), " (titular: Laura Sanz)."), React.createElement("p", {
     style: {
       fontSize: 13,
       color: "var(--rojo)",
@@ -6033,11 +6035,14 @@ function CEODashboard({
     };
   },[recurringExpenses,activeMonthlyIncomeEstimate,groups,profiles,extraEnrollments,familyMembers,rates,tiers,currentKey]);
   const incomeBySource = useMemo(() => {
-    const clases = payments.filter(p => p.status === "validated" && FISCAL_MONTHS.some(m => m.year === p.year && m.month === p.month)).reduce((s, p) => s + (p.amount || 0), 0);
+    const validatedInPeriod = payments.filter(p => p.status === "validated" && FISCAL_MONTHS.some(m => m.year === p.year && m.month === p.month));
+    const matricula = validatedInPeriod.reduce((s, p) => s + (p.enrollment_fee_included || 0), 0);
+    const clases = validatedInPeriod.reduce((s, p) => s + (p.amount || 0) - (p.enrollment_fee_included || 0), 0);
     const bonos = (flexPasses || []).filter(f => f.status === "validated").reduce((s, f) => s + (f.price_paid || 0), 0);
     const talleres = (workshopRegs || []).filter(w => w.status === "validated").reduce((s, w) => s + (w.amount || 0), 0);
     return {
       clases: Math.round(clases * 100) / 100,
+      matricula: Math.round(matricula * 100) / 100,
       bonos: Math.round(bonos * 100) / 100,
       talleres: Math.round(talleres * 100) / 100
     };
@@ -6266,6 +6271,19 @@ function CEODashboard({
       fontSize: 12
     }
   }, "Bonos de clases")), React.createElement("div", {
+    className: "col"
+  }, React.createElement("div", {
+    style: {
+      fontSize: 18,
+      fontWeight: 800,
+      color: "#B85C00"
+    }
+  }, incomeBySource.matricula, "€"), React.createElement("div", {
+    style: {
+      color: "var(--gris)",
+      fontSize: 12
+    }
+  }, "Matrículas")), React.createElement("div", {
     className: "col"
   }, React.createElement("div", {
     style: {
@@ -7286,7 +7304,8 @@ function PaymentsOverviewByGroup({
     const extraFee = extraFeeFor(p.id, due.year, due.month);
     const planType = p.payment_type || "monthly";
     const monthlyFee = computeTotalFee(extraFee ? [p.fee || 0, extraFee] : [p.fee || 0]);
-    const amountDue = planType === "monthly" ? monthlyFee : computePlanTotal(monthlyFee, planType, due.year, due.month);
+    const pendingEnrollmentFee = p.enrollment_fee > 0 && !p.enrollment_fee_paid ? p.enrollment_fee : 0;
+    const amountDue = (planType === "monthly" ? monthlyFee : computePlanTotal(monthlyFee, planType, due.year, due.month)) + pendingEnrollmentFee;
     const planLabel = {
       monthly: "Mensual",
       quarterly: "Trimestral",
@@ -7333,7 +7352,13 @@ function PaymentsOverviewByGroup({
         fontWeight: 800,
         color: "var(--azul-oscuro)"
       }
-    }, amountDue, "€ (", MN[due.month].slice(0, 3), ")"), isPaid ? React.createElement("span", {
+    }, amountDue, "€ (", MN[due.month].slice(0, 3), ")", pendingEnrollmentFee > 0 && React.createElement("span", {
+      style: {
+        fontSize: 11,
+        fontWeight: 400,
+        color: "var(--mostaza)"
+      }
+    }, " incl. ", pendingEnrollmentFee, "€ matrícula")), isPaid ? React.createElement("span", {
       className: "badge badge-ok"
     }, "Pagado (", MN[due.month].slice(0, 3), ")") : isUploaded ? React.createElement("span", {
       className: "badge badge-warn"
@@ -7600,6 +7625,9 @@ function PaymentsView({
     }).eq("student_id", studentId);
     q = filePath ? q.eq("file_path", filePath) : q.eq("year", year).eq("month", month);
     await q;
+    // Si este pago incluía matrícula, la marcamos como ya pagada en su perfil
+    const {data: rows} = await sb.from("payments").select("enrollment_fee_included").eq("student_id",studentId).gt("enrollment_fee_included",0);
+    if(rows && rows.length>0) await sb.from("profiles").update({enrollment_fee_paid:true}).eq("id",studentId);
     await reload();
   }
   function realFeeFor(s, asOfYear, asOfMonth) {
@@ -7630,8 +7658,9 @@ function PaymentsView({
     const planType = s.payment_type || "monthly";
     const planMonths = monthsForPlan(planType, due.year, due.month);
     const realFee = realFeeFor(s, due.year, due.month);
-    const total = planType === "monthly" ? realFee : computePlanTotal(realFee, planType, due.year, due.month);
-    const label = planType === "monthly" ? `la cuota de ${MN[due.month]} ${due.year}` : `su plan ${planType === "quarterly" ? "trimestral" : "de curso completo"}, que cubre desde ${MN[due.month]} ${due.year} (${planMonths.length} meses)`;
+    const pendingEnrollmentFee = (s.enrollment_fee>0 && !s.enrollment_fee_paid) ? s.enrollment_fee : 0;
+    const total = (planType === "monthly" ? realFee : computePlanTotal(realFee, planType, due.year, due.month)) + pendingEnrollmentFee;
+    const label = (planType === "monthly" ? `la cuota de ${MN[due.month]} ${due.year}` : `su plan ${planType === "quarterly" ? "trimestral" : "de curso completo"}, que cubre desde ${MN[due.month]} ${due.year} (${planMonths.length} meses)`) + (pendingEnrollmentFee>0 ? ` (incluye ${pendingEnrollmentFee}€ de matrícula)` : "");
     if (!window.confirm(`¿Confirmas que ${s.display_name} ha pagado ${label} — total ${total}€ — por WhatsApp/efectivo u otra vía fuera de la app?`)) return;
     const rows = planMonths.map((m, i) => ({
       student_id: s.id,
@@ -7639,10 +7668,12 @@ function PaymentsView({
       month: m.month,
       status: "validated",
       amount: i === 0 ? total : 0,
+      enrollment_fee_included: i === 0 ? pendingEnrollmentFee : 0,
       validated_date: todayISO,
       upload_date: todayISO,
       filename: "Pago manual (dirección)"
     }));
+    if(pendingEnrollmentFee>0) await sb.from("profiles").update({enrollment_fee_paid:true}).eq("id",s.id);
     await sb.from("payments").upsert(rows, {
       onConflict: "student_id,year,month"
     });
