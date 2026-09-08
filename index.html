@@ -4091,14 +4091,15 @@ function StudentApp({
   }
   async function removeAnyClass(groupId, groupName, isPrimary) {
     if (!window.confirm(`¿Seguro que quieres darte de baja de "${groupName}"? Perderás tu plaza en esa clase.`)) return;
+    // Consultamos siempre el dato real en este momento, nunca una copia guardada que pueda estar desactualizada
+    const { data: freshExtras } = await sb.from("student_groups").select("*").eq("student_id", profile.id);
+    const currentExtras = freshExtras || [];
     if (!isPrimary) {
-      // Es una clase extra: buscamos su fila en student_groups y la quitamos, tal y como ya funcionaba
-      const row = extraGroupIds.find(r => r.group_id === groupId);
+      const row = currentExtras.find(r => r.group_id === groupId);
       if (row) await sb.from("student_groups").delete().eq("id", row.id);
     } else {
-      // Es la clase principal: si tiene alguna clase extra, esa pasa a ser la nueva principal
-      if (extraGroupIds.length > 0) {
-        const promoted = extraGroupIds[0];
+      if (currentExtras.length > 0) {
+        const promoted = currentExtras[0];
         const promotedGroup = allGroups.find(g => g.id === promoted.group_id);
         await sb.from("profiles").update({group_id: promoted.group_id, fee: promotedGroup?.fee||0}).eq("id", profile.id);
         await sb.from("student_groups").delete().eq("id", promoted.id);
@@ -6478,12 +6479,14 @@ function StudentEditModal({
   useEffect(loadExtraClasses, []);
   async function removeAnyClassCEO(groupId, groupName, isPrimary) {
     if (!window.confirm(`¿Seguro que quieres quitar a ${p.display_name} de "${groupName}"? Perderá su plaza en esa clase.`)) return;
+    const { data: freshExtras } = await sb.from("student_groups").select("*").eq("student_id", p.id);
+    const currentExtras = freshExtras || [];
     if (!isPrimary) {
-      const row = extraClasses.find(r => r.group_id === groupId);
+      const row = currentExtras.find(r => r.group_id === groupId);
       if (row) await sb.from("student_groups").delete().eq("id", row.id);
     } else {
-      if (extraClasses.length > 0) {
-        const promoted = extraClasses[0];
+      if (currentExtras.length > 0) {
+        const promoted = currentExtras[0];
         const promotedGroup = (allGroups||[]).find(g => g.id === promoted.group_id);
         await sb.from("profiles").update({group_id: promoted.group_id, fee: promotedGroup?.fee||0}).eq("id", p.id);
         await sb.from("student_groups").delete().eq("id", promoted.id);
@@ -9773,130 +9776,173 @@ function ExpensesView({
     onClick: saveEdit
   }, "Guardar")))));
 }
-function DailyScheduleView({
+function WeeklyDetailView({
   groups,
   profiles,
   extraEnrollments,
   familyMembers
 }) {
-  const [date, setDate] = useState(todayISO);
+  const [weekOffset, setWeekOffset] = useState(0);
   const [allBookings, setAllBookings] = useState([]);
   const [allCancellations, setAllCancellations] = useState([]);
+  const [expanded, setExpanded] = useState(null);
+  const weekDates = useMemo(() => {
+    const base = new Date(NOW);
+    base.setHours(0, 0, 0, 0);
+    const dow = (base.getDay() + 6) % 7;
+    const monday = new Date(base);
+    monday.setDate(base.getDate() - dow + weekOffset * 7);
+    return Array.from({
+      length: 5
+    }, (_, i) => {
+      const d = new Date(monday);
+      d.setDate(monday.getDate() + i);
+      return toLocalISO(d);
+    });
+  }, [weekOffset]);
   useEffect(() => {
-    sb.from("session_bookings").select("*").eq("session_date", date).is("cancelled_at", null).then(({
+    sb.from("session_bookings").select("*").gte("session_date", weekDates[0]).lte("session_date", weekDates[4]).is("cancelled_at", null).then(({
       data
     }) => setAllBookings(data || []));
-    sb.from("session_cancellations").select("*").eq("session_date", date).then(({
+    sb.from("session_cancellations").select("*").gte("session_date", weekDates[0]).lte("session_date", weekDates[4]).then(({
       data
     }) => setAllCancellations(data || []));
-  }, [date]);
-  const d = new Date(date + "T00:00:00");
-  const jsDow = d.getDay();
-  const dow = jsDow === 0 ? 7 : jsDow;
-  const closed = !isSchoolDay(date);
-  const classesToday = groups.filter(g => {
-    if (g.day !== dow) return false;
-    if (g.start_date && date < g.start_date) return false;
-    return true;
-  }).sort((a, b) => a.time_start.localeCompare(b.time_start));
-  function shiftDate(deltaDays) {
-    const nd = new Date(date + "T00:00:00");
-    nd.setDate(nd.getDate() + deltaDays);
-    setDate(toLocalISO(nd));
-  }
+  }, [weekDates]);
+  const firstDate = new Date(weekDates[0] + "T00:00:00");
+  const lastDate = new Date(weekDates[4] + "T00:00:00");
   return React.createElement("div", null, React.createElement("div", {
     className: "row",
     style: {
       marginBottom: 14,
-      alignItems: "flex-end",
-      gap: 10
+      alignItems: "center",
+      justifyContent: "space-between"
     }
   }, React.createElement("button", {
     className: "btn-ghost",
-    onClick: () => shiftDate(-1)
-  }, "← Día anterior"), React.createElement("div", {
-    className: "col"
-  }, React.createElement(Field, {
-    label: "Ver el día"
-  }, React.createElement("input", {
-    type: "date",
-    value: date,
-    onChange: e => setDate(e.target.value)
-  }))), React.createElement("button", {
-    className: "btn-ghost",
-    onClick: () => shiftDate(1)
-  }, "Día siguiente →"), React.createElement("button", {
-    className: "btn-ghost",
-    onClick: () => setDate(todayISO)
-  }, "Hoy")), React.createElement("h3", {
+    onClick: () => setWeekOffset(w => w - 1)
+  }, "← Semana anterior"), React.createElement("div", {
     style: {
-      marginBottom: 8
+      fontWeight: 800,
+      color: "var(--azul-oscuro)"
     }
-  }, DNF[dow - 1], " ", d.getDate(), " de ", MN[d.getMonth() + 1], " de ", d.getFullYear()), closed && React.createElement("div", {
-    className: "card",
+  }, firstDate.getDate(), "/", firstDate.getMonth() + 1, " – ", lastDate.getDate(), "/", lastDate.getMonth() + 1), React.createElement("button", {
+    className: "btn-ghost",
+    onClick: () => setWeekOffset(w => w + 1)
+  }, "Semana siguiente →")), weekOffset !== 0 && React.createElement("div", {
     style: {
-      borderLeft: "4px solid var(--mostaza)"
+      textAlign: "center",
+      marginBottom: 10
     }
-  }, "No hay clase ningún día — ", SCHOOL_CLOSURES.find(c => date >= c.start && date <= c.end)?.label || "fuera del calendario escolar", "."), !closed && classesToday.length === 0 && React.createElement("div", {
-    className: "empty"
-  }, "No hay ninguna clase programada este día."), !closed && classesToday.map(g => {
-    const attendees = dayAttendees(g, date, {
-      profiles,
-      extraEnrollments,
-      familyMembers,
-      allBookings,
-      allCancellations
-    });
-    const cap = capOf(g);
+  }, React.createElement("button", {
+    className: "btn-ghost",
+    style: {
+      fontSize: 12
+    },
+    onClick: () => setWeekOffset(0)
+  }, "Volver a esta semana")), React.createElement("div", {
+    style: {
+      display: "grid",
+      gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))",
+      gap: 10
+    }
+  }, weekDates.map((date, i) => {
+    const d = new Date(date + "T00:00:00");
+    const dow = i + 1;
+    const closed = !isSchoolDay(date);
+    const classesToday = groups.filter(g => g.day === dow && (!g.start_date || date >= g.start_date)).sort((a, b) => a.time_start.localeCompare(b.time_start));
     return React.createElement("div", {
-      key: g.id,
-      className: "card",
-      style: {
-        marginBottom: 12,
-        borderLeft: `4px solid ${classColor(g.name)}`
-      }
-    }, React.createElement("div", {
-      style: {
-        display: "flex",
-        justifyContent: "space-between",
-        alignItems: "center",
-        flexWrap: "wrap",
-        gap: 6
-      }
+      key: date
     }, React.createElement("div", {
       style: {
         fontWeight: 800,
-        color: "var(--azul-oscuro)"
-      }
-    }, g.time_start, "-", g.time_end, " · ", g.name, " · ", g.teacher), React.createElement("div", {
-      style: {
         fontSize: 13,
+        color: "var(--azul-oscuro)",
+        marginBottom: 6,
+        borderBottom: "2px solid var(--azul-claro)",
+        paddingBottom: 4
+      }
+    }, DNF[i], " ", d.getDate(), "/", d.getMonth() + 1), closed && React.createElement("div", {
+      style: {
+        fontSize: 12,
         color: "var(--gris)"
       }
-    }, attendees.length, "/", cap, " asistentes previstos")), attendees.length === 0 && React.createElement("div", {
+    }, "Sin clase"), !closed && classesToday.length === 0 && React.createElement("div", {
       style: {
-        fontSize: 13,
-        color: "var(--gris)",
-        marginTop: 6
+        fontSize: 12,
+        color: "var(--gris)"
       }
-    }, "Nadie previsto todavía."), attendees.map((a, i) => React.createElement("div", {
-      key: i,
-      style: {
-        display: "flex",
-        justifyContent: "space-between",
-        padding: "4px 0",
-        borderBottom: "1px solid #EEF2F8",
-        fontSize: 13
-      }
-    }, React.createElement("span", null, a.name), a.type !== "fija" && React.createElement("span", {
-      className: "badge",
-      style: {
-        background: a.type === "flexible" ? "#E4F7EC" : a.type === "bono" ? "#FFF3D6" : "#E8F0FA",
-        color: a.type === "flexible" ? "var(--verde)" : a.type === "bono" ? "#6a4b00" : "var(--azul-oscuro)",
-        fontSize: 10
-      }
-    }, a.type))));
-  }));
+    }, "—"), classesToday.map(g => {
+      const attendees = dayAttendees(g, date, {
+        profiles,
+        extraEnrollments,
+        familyMembers,
+        allBookings,
+        allCancellations
+      });
+      const cap = capOf(g);
+      const key = g.id + "::" + date;
+      const isOpen = expanded === key;
+      const low = attendees.length <= 2;
+      return React.createElement("div", {
+        key: key
+      }, React.createElement("div", {
+        onClick: () => setExpanded(isOpen ? null : key),
+        style: {
+          cursor: "pointer",
+          marginBottom: 6,
+          borderRadius: 10,
+          padding: "8px 10px",
+          background: isOpen ? "#FFF3D6" : "#fff",
+          border: `2px solid ${isOpen ? "var(--mostaza)" : classColor(g.name)}`
+        }
+      }, React.createElement("div", {
+        style: {
+          fontWeight: 700,
+          fontSize: 12
+        }
+      }, g.name), React.createElement("div", {
+        style: {
+          fontSize: 11,
+          color: classColor(g.name)
+        }
+      }, g.teacher, " · ", g.time_start), React.createElement("div", {
+        style: {
+          fontSize: 11,
+          color: low ? "var(--rojo)" : "var(--gris)",
+          fontWeight: low ? 700 : 400
+        }
+      }, attendees.length, "/", cap, " asistentes", low ? " ⚠️" : "")), isOpen && React.createElement("div", {
+        style: {
+          background: "var(--fondo)",
+          borderRadius: 10,
+          padding: 10,
+          marginBottom: 10,
+          marginTop: -4
+        }
+      }, attendees.length === 0 && React.createElement("div", {
+        style: {
+          fontSize: 12,
+          color: "var(--gris)"
+        }
+      }, "Nadie previsto todavía."), attendees.map((a, idx) => React.createElement("div", {
+        key: idx,
+        style: {
+          display: "flex",
+          justifyContent: "space-between",
+          padding: "3px 0",
+          fontSize: 12,
+          borderBottom: "1px solid #E2E8F0"
+        }
+      }, React.createElement("span", null, a.name), a.type !== "fija" && React.createElement("span", {
+        className: "badge",
+        style: {
+          background: a.type === "flexible" ? "#E4F7EC" : a.type === "bono" ? "#FFF3D6" : "#E8F0FA",
+          color: a.type === "flexible" ? "var(--verde)" : a.type === "bono" ? "#6a4b00" : "var(--azul-oscuro)",
+          fontSize: 9
+        }
+      }, a.type)))));
+    }));
+  })));
 }
 function CEOApp({
   profile,
@@ -9951,7 +9997,7 @@ function CEOApp({
     key: "alumnado",
     icon: "◈",
     label: "Alumnado",
-    subtabs: [["groups", "Clases"], ["daily", "Calendario del día"], ["students", "Alumnos"], ["stats", "Estadísticas"]]
+    subtabs: [["groups", "Clases"], ["daily", "Esta semana"], ["students", "Alumnos"], ["stats", "Estadísticas"]]
   }, {
     key: "economico",
     icon: "€",
@@ -10058,7 +10104,7 @@ function CEOApp({
     extraEnrollments: extraEnrollments,
     familyMembers: familyMembers,
     reload: load
-  }), tab === "daily" && React.createElement(DailyScheduleView, {
+  }), tab === "daily" && React.createElement(WeeklyDetailView, {
     groups: groups,
     profiles: profiles,
     extraEnrollments: extraEnrollments,
