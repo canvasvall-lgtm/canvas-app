@@ -3147,9 +3147,7 @@ function ClassNotesForStudent({
     }, g ? g.name + " · " : "", n.teacher_name, " · ", new Date(n.created_at).toLocaleString("es-ES")));
   }));
 }
-function BuyBonoView({
-  profile
-}) {
+function BuyBonoView({profile,group,onRemoveFixedClass}) {
   const [myPasses, setMyPasses] = useState([]);
   const [buying, setBuying] = useState(false);
   const [passType, setPassType] = useState("bono5");
@@ -3214,7 +3212,15 @@ function BuyBonoView({
     style: {
       marginTop: 0
     }
-  }, "🎟️ Bonos de clases"), myPasses.map(p => React.createElement("div", {
+  }, "🎟️ Bonos de clases"), group && myPasses.some(p=>p.status==="validated") && React.createElement("div", {
+    style: {background:"#E8F0FA",border:"2px solid var(--azul-oscuro)",borderRadius:10,padding:12,marginBottom:12,fontSize:13,color:"var(--azul-oscuro)"}
+  }, React.createElement("b",null,"📋 Estás de alta en 2 formatos a la vez:"), React.createElement("div",{style:{marginTop:4}}, "1) Clase fija: ", React.createElement("b",null,group.name), " (", DNF[group.day-1], " ", group.time_start, ") — se paga aparte, con su cuota mensual normal."), React.createElement("div",{style:{marginTop:2}}, "2) Bono de clases — se paga aparte, como ya hiciste al comprarlo."), React.createElement("div",{style:{marginTop:6,fontSize:12}}, "Si solo quieres una de las dos cosas, puedes dejar la clase fija aquí: ",
+    React.createElement("button", {className:"btn-ghost", style:{padding:"3px 8px",fontSize:11,marginLeft:4}, onClick:onRemoveFixedClass}, "Quitar mi clase fija")
+  )), group && !myPasses.some(p=>p.status==="validated") && React.createElement("div", {
+    style: {background:"#FFF3D6",border:"2px solid var(--mostaza)",borderRadius:10,padding:12,marginBottom:12,fontSize:13,color:"#6a4b00"}
+  }, "⚠️ Ahora mismo sigues teniendo tu clase fija de ", React.createElement("b",null,group.name), " (", DNF[group.day-1], " ", group.time_start, "). Si compras un bono además de tu clase fija, pagarás las dos cosas por separado — si prefieres usar solo el bono, deja tu clase fija: ",
+    React.createElement("button", {className:"btn-ghost", style:{padding:"3px 8px",fontSize:11,marginLeft:4}, onClick:onRemoveFixedClass}, "Quitar mi clase fija")
+  ), myPasses.map(p => React.createElement("div", {
     key: p.id,
     style: {
       padding: "8px 0",
@@ -3802,6 +3808,18 @@ async function applyPendingModeChangeIfDue(profile, onApplied) {
   await sb.from("profiles").update(update).eq("id", profile.id);
   if (onApplied) onApplied();
 }
+// Si alguien se queda sin clase principal pero tiene una fila "extra" huérfana (sin ninguna otra clase),
+// la ascendemos automáticamente a principal — nunca debería quedarse a medias entre las dos.
+async function healOrphanExtraClass(profile, onHealed) {
+  if (profile.group_id) return; // ya tiene clase principal, nada que reparar
+  const { data: extras } = await sb.from("student_groups").select("*").eq("student_id", profile.id);
+  if (!extras || extras.length === 0) return; // no tiene ninguna clase extra tampoco, está bien así
+  if (extras.length > 1) return; // caso ambiguo con varias extras: mejor que lo revise dirección a mano
+  const { data: g } = await sb.from("groups").select("*").eq("id", extras[0].group_id).single();
+  await sb.from("profiles").update({ group_id: extras[0].group_id, fee: g?.fee || 0 }).eq("id", profile.id);
+  await sb.from("student_groups").delete().eq("id", extras[0].id);
+  if (onHealed) onHealed();
+}
 function SubscriptionModeSwitcher({
   profile,
   onChanged
@@ -3969,6 +3987,7 @@ function StudentApp({
   }
   useEffect(() => {
     applyPendingModeChangeIfDue(profile, () => window.location.reload());
+    healOrphanExtraClass(profile, () => window.location.reload());
     if (profile.group_id) sb.from("groups").select("*").eq("id", profile.group_id).single().then(({
       data
     }) => setGroup(data));
@@ -4399,7 +4418,9 @@ function StudentApp({
     profile: profile,
     group: group
   }), tab === "recuperar" && React.createElement(React.Fragment, null, React.createElement(BuyBonoView, {
-    profile: profile
+    profile: profile,
+    group: group,
+    onRemoveFixedClass: () => removeAnyClass(group?.id, group?.name, true)
   }), React.createElement(FlexBookingPanel, {
     profile: profile,
     groups: allGroups
