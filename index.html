@@ -165,6 +165,20 @@ const MN = ["", "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", 
 const STANDARD_ENROLLMENT_FEE = 10;
 const COURSE_START = "2026-09-09";
 const COURSE_END = "2027-06-30";
+const NEXT_CLEANING_DATE = "2026-09-12"; // TODO: ajustar a la fecha real de la próxima limpieza
+const CLEANING_INTERVAL_DAYS = 14;
+const CLEANING_AREAS = ["Ventanas","Zona exterior","Sala clases","Sala talleres","Baño clases","Baño talleres","Suelos","Mesas","Sillas"];
+function nextCleaningDates(count){
+  const dates = [];
+  let d = new Date(NEXT_CLEANING_DATE+"T00:00:00");
+  const today = new Date(todayISO+"T00:00:00");
+  while(d < today) d.setDate(d.getDate()+CLEANING_INTERVAL_DAYS);
+  for(let i=0;i<count;i++){
+    dates.push(toLocalISO(d));
+    d = new Date(d); d.setDate(d.getDate()+CLEANING_INTERVAL_DAYS);
+  }
+  return dates;
+}
 const SCHOOL_CLOSURES = [{
   start: "2026-09-08",
   end: "2026-09-08",
@@ -376,9 +390,10 @@ function dayAttendees(g, date, {profiles, extraEnrollments, familyMembers, allBo
   return [...fixedRoster, ...bookedRoster];
 }
 
-function nextOccurrences(dayOfWeek, count = 3) {
+function nextOccurrences(dayOfWeek, count = 3, minDate) {
   const dates = [];
-  const startFrom = todayISO < COURSE_START ? COURSE_START + "T00:00:00" : NOW.toISOString();
+  const effectiveMin = (minDate && minDate > COURSE_START) ? minDate : COURSE_START;
+  const startFrom = todayISO < effectiveMin ? effectiveMin + "T00:00:00" : NOW.toISOString();
   let d = new Date(startFrom);
   d.setHours(0, 0, 0, 0);
   for (let i = 0; i < 200 && dates.length < count; i++) {
@@ -2208,7 +2223,7 @@ function MySessionsPanel({
   const [msg, setMsg] = useState("");
   const occurrences = useMemo(() => {
     const list = [];
-    (groups || []).forEach(g => nextOccurrences(g.day, 4).forEach(date => list.push({
+    (groups || []).forEach(g => nextOccurrences(g.day, 4, g.start_date).forEach(date => list.push({
       group: g,
       date,
       type: "regular"
@@ -2403,6 +2418,7 @@ function RecoveryBookingPanel({
       groups.forEach(g => {
         if ((myGroupIds || []).includes(g.id)) return;
         if (g.day !== dow) return;
+        if (g.start_date && date < g.start_date) return;
         if (hoursUntil(date, g.time_start) < 3) return;
         if (spotsFor(g, date) <= 0) return;
         (m[date] = m[date] || []).push(g);
@@ -4746,6 +4762,20 @@ function SessionModal({
     setSaving(false);
     if (!error) onClose();
   }
+  const typeColors = {
+    flexible: {
+      bg: "#E4F7EC",
+      fg: "var(--verde)"
+    },
+    bono: {
+      bg: "#FFF3D6",
+      fg: "#6a4b00"
+    },
+    recuperación: {
+      bg: "#E8F0FA",
+      fg: "var(--azul-oscuro)"
+    }
+  };
   return React.createElement("div", {
     className: "modal-bg",
     onClick: onClose
@@ -4768,36 +4798,43 @@ function SessionModal({
     const p = studentProfileFor(name);
     const pendingDue = cashPendingInfo(p);
     const type = attendeeType(name);
+    const tc = typeColors[type];
     return React.createElement("div", {
       key: name,
       style: {
-        padding: "8px 0",
+        padding: "10px 0",
         borderBottom: "1px solid #EEF2F8"
       }
     }, React.createElement("div", {
       style: {
-        display: "flex",
-        justifyContent: "space-between",
-        alignItems: "center"
+        fontWeight: 600,
+        fontSize: 14,
+        marginBottom: 6,
+        lineHeight: 1.3
       }
-    }, React.createElement("span", null, name, " ", type !== "fija" && React.createElement("span", {
+    }, name, type !== "fija" && React.createElement("span", {
       className: "badge",
       style: {
-        background: type === "flexible" ? "#E4F7EC" : type === "bono" ? "#FFF3D6" : "#E8F0FA",
-        color: type === "flexible" ? "var(--verde)" : type === "bono" ? "#6a4b00" : "var(--azul-oscuro)",
+        background: tc.bg,
+        color: tc.fg,
         fontSize: 10,
-        marginLeft: 4
+        marginLeft: 6,
+        verticalAlign: "middle"
       }
     }, type)), React.createElement("div", {
-      className: "row",
       style: {
+        display: "grid",
+        gridTemplateColumns: "repeat(4,1fr)",
         gap: 6
       }
     }, React.createElement("button", {
       style: {
-        padding: "6px 10px",
+        padding: "8px 0",
+        borderRadius: 8,
+        border: "none",
         background: status[name] === "pr" || !status[name] ? "var(--verde)" : "#eee",
-        color: status[name] === "pr" || !status[name] ? "#fff" : "#999"
+        color: status[name] === "pr" || !status[name] ? "#fff" : "#999",
+        fontSize: 15
       },
       onClick: () => setStatus(s => ({
         ...s,
@@ -4805,9 +4842,12 @@ function SessionModal({
       }))
     }, "✓"), React.createElement("button", {
       style: {
-        padding: "6px 10px",
+        padding: "8px 0",
+        borderRadius: 8,
+        border: "none",
         background: status[name] === "ar" ? "var(--mostaza)" : "#eee",
-        color: status[name] === "ar" ? "#fff" : "#999"
+        color: status[name] === "ar" ? "#fff" : "#999",
+        fontSize: 15
       },
       onClick: () => setStatus(s => ({
         ...s,
@@ -4815,9 +4855,12 @@ function SessionModal({
       }))
     }, "↩"), React.createElement("button", {
       style: {
-        padding: "6px 10px",
+        padding: "8px 0",
+        borderRadius: 8,
+        border: "none",
         background: status[name] === "ab" ? "var(--rojo)" : "#eee",
-        color: status[name] === "ab" ? "#fff" : "#999"
+        color: status[name] === "ab" ? "#fff" : "#999",
+        fontSize: 15
       },
       onClick: () => setStatus(s => ({
         ...s,
@@ -4827,23 +4870,26 @@ function SessionModal({
       disabled: !p,
       title: !p ? "Este alumno no tiene cuenta en la app" : "",
       style: {
-        padding: "6px 10px",
+        padding: "8px 0",
+        borderRadius: 8,
+        border: "none",
         background: cash[name] ? "var(--azul-oscuro)" : "#eee",
         color: cash[name] ? "#fff" : "#999",
-        opacity: p ? 1 : 0.4
+        opacity: p ? 1 : 0.4,
+        fontSize: 15
       },
       onClick: () => setCash(c => ({
         ...c,
         [name]: !c[name]
       }))
-    }, "💶"))), pendingDue && React.createElement("div", {
+    }, "💶")), pendingDue && React.createElement("div", {
       style: {
         fontSize: 12,
         color: "#6a4b00",
         background: "#FFF3D6",
         borderRadius: 6,
         padding: "4px 8px",
-        marginTop: 4
+        marginTop: 6
       }
     }, "💶 Eligió pagar en efectivo — le queda pendiente ", MN[pendingDue.month], ". Si te paga hoy, marca el botón 💶 y dirección lo validará."));
   }), React.createElement("div", {
@@ -4872,12 +4918,15 @@ function MyHoursPanel({
 }) {
   const [year, setYear] = useState(CY);
   const [month, setMonth] = useState(CM);
+  const [overrides, setOverrides] = useState([]);
+  useEffect(() => { sb.from("session_teacher_overrides").select("*").then(({data}) => setOverrides(data||[])); }, []);
   const byTeacher = useMemo(() => computeTeacherPay(year, month, {
     groups,
     attendance,
     rates,
-    tiers
-  }), [year, month, groups, attendance, rates, tiers]);
+    tiers,
+    overrides
+  }), [year, month, groups, attendance, rates, tiers, overrides]);
   const mine = byTeacher[teacherName] || {
     hours: 0,
     total: 0,
@@ -5011,7 +5060,8 @@ function MyHoursPanel({
     groups: groups,
     attendance: attendance,
     rates: rates,
-    tiers: tiers
+    tiers: tiers,
+    overrides: overrides
   }));
 }
 function TeacherApp({
@@ -5036,7 +5086,9 @@ function TeacherApp({
   const [withdrawals, setWithdrawals] = useState([]);
   const [familyMembers, setFamilyMembers] = useState([]);
   const [payments, setPayments] = useState([]);
+  const [overrides, setOverrides] = useState([]);
   function load() {
+    sb.from("session_teacher_overrides").select("*").then(({data}) => setOverrides(data||[]));
     sb.from("groups").select("*").order("day").then(({
       data
     }) => setGroups(data || []));
@@ -5068,7 +5120,12 @@ function TeacherApp({
   useEffect(load, []);
   const myGroups = groups.filter(g => g.teacher === profile.teacher_name);
   const selectedDow = (new Date(selectedDate + "T00:00:00").getDay() + 6) % 7 + 1;
-  const selectedDayGroups = myGroups.filter(g => g.day === selectedDow);
+  const todaysOverridesIn = overrides.filter(o => o.session_date === selectedDate && o.substitute_teacher === profile.teacher_name);
+  const substituteGroupsToday = groups.filter(g => todaysOverridesIn.some(o => o.group_id === g.id));
+  const selectedDayGroups = [
+    ...myGroups.filter(g => g.day === selectedDow && !overrides.some(o => o.group_id === g.id && o.session_date === selectedDate)),
+    ...substituteGroupsToday
+  ];
   function shiftDate(days) {
     const d = new Date(selectedDate + "T00:00:00");
     d.setDate(d.getDate() + days);
@@ -5133,6 +5190,9 @@ function TeacherApp({
     className: "tab " + (tab === "hours" ? "active" : ""),
     onClick: () => setTab("hours")
   }, "Mis horas"), React.createElement("div", {
+    className: "tab " + (tab === "limpieza" ? "active" : ""),
+    onClick: () => setTab("limpieza")
+  }, "Limpieza"), React.createElement("div", {
     className: "tab " + (tab === "condiciones" ? "active" : ""),
     onClick: () => setTab("condiciones")
   }, "Condiciones")), tab === "mine" && React.createElement(React.Fragment, null, React.createElement("div", {
@@ -5173,6 +5233,8 @@ function TeacherApp({
   }, "No tienes clases ese día 🎨") : selectedDayGroups.map(g => React.createElement(TeacherGroupCard, {
     key: g.id,
     group: g,
+    date: selectedDate,
+    substitutionNote: todaysOverridesIn.some(o => o.group_id === g.id) ? `Hoy sustituyes a ${g.teacher}` : null,
     profiles: profiles,
     extraEnrollments: extraEnrollments,
     familyMembers: familyMembers,
@@ -5196,7 +5258,7 @@ function TeacherApp({
     profiles: profiles,
     extraEnrollments: extraEnrollments,
     familyMembers: familyMembers
-  }), tab === "condiciones" && React.createElement(ConditionsAndPricingView, {
+  }), tab === "limpieza" && React.createElement(CleaningView, {myName: profile.teacher_name}), tab === "condiciones" && React.createElement(ConditionsAndPricingView, {
     groups: groups
   })), session && React.createElement(SessionModal, {
     group: session.group,
@@ -5214,6 +5276,8 @@ function TeacherApp({
 }
 function TeacherGroupCard({
   group: g,
+  date,
+  substitutionNote,
   profiles,
   extraEnrollments,
   familyMembers,
@@ -5225,7 +5289,28 @@ function TeacherGroupCard({
   const [notes, setNotes] = useState([]);
   const [newNote, setNewNote] = useState("");
   const [sending, setSending] = useState(false);
-  const roster = effectiveRoster(g, profiles, extraEnrollments, familyMembers);
+  const [dayBookings, setDayBookings] = useState([]);
+  const [dayCancellations, setDayCancellations] = useState([]);
+  useEffect(() => {
+    if (!date) return;
+    sb.from("session_bookings").select("*").eq("group_id", g.id).eq("session_date", date).is("cancelled_at", null).then(({
+      data
+    }) => setDayBookings(data || []));
+    sb.from("session_cancellations").select("*").eq("group_id", g.id).eq("session_date", date).then(({
+      data
+    }) => setDayCancellations(data || []));
+  }, [date]);
+  const attendees = date ? dayAttendees(g, date, {
+    profiles,
+    extraEnrollments,
+    familyMembers,
+    allBookings: dayBookings,
+    allCancellations: dayCancellations
+  }) : effectiveRoster(g, profiles, extraEnrollments, familyMembers).map(name => ({
+    name,
+    type: "fija"
+  }));
+  const roster = attendees.map(a => a.name);
   function loadNotes() {
     sb.from("class_notes").select("*").eq("group_id", g.id).order("created_at", {
       ascending: false
@@ -5248,19 +5333,37 @@ function TeacherGroupCard({
     setSending(false);
     loadNotes();
   }
+  const typeColors = {
+    flexible: {
+      bg: "#E4F7EC",
+      fg: "var(--verde)"
+    },
+    bono: {
+      bg: "#FFF3D6",
+      fg: "#6a4b00"
+    },
+    recuperación: {
+      bg: "#E8F0FA",
+      fg: "var(--azul-oscuro)"
+    }
+  };
   return React.createElement("div", {
     className: "card",
     style: {
       marginBottom: 10,
       borderLeft: `4px solid ${classColor(g.name)}`
     }
-  }, React.createElement("div", {
+  }, substitutionNote && React.createElement("div", {
+    style: {background:"#FFF3D6",border:"1px solid var(--mostaza)",borderRadius:8,padding:"4px 8px",fontSize:12,color:"#6a4b00",marginBottom:8,fontWeight:700}
+  }, "🔄 ", substitutionNote), React.createElement("div", {
     style: {
       display: "flex",
       justifyContent: "space-between",
-      alignItems: "center"
+      alignItems: "center",
+      flexWrap: "wrap",
+      gap: 6
     }
-  }, React.createElement("div", null, showDay && React.createElement("b", null, DNF[g.day - 1], " "), React.createElement("b", null, g.name), " · ", g.time_start, "-", g.time_end, " · ", roster.length, "/", capOf(g), " alumnos"), React.createElement("div", {
+  }, React.createElement("div", null, showDay && React.createElement("b", null, DNF[g.day - 1], " "), React.createElement("b", null, g.name), " · ", g.time_start, "-", g.time_end, " · ", roster.length, "/", capOf(g), " alumnos", date && " (hoy)"), React.createElement("div", {
     className: "row",
     style: {
       gap: 6
@@ -5286,18 +5389,29 @@ function TeacherGroupCard({
       fontSize: 13,
       marginBottom: 6
     }
-  }, "Alumnos inscritos"), roster.length === 0 && React.createElement("div", {
+  }, date ? "Quién viene hoy de verdad" : "Alumnos inscritos (fijos)"), roster.length === 0 && React.createElement("div", {
     style: {
       fontSize: 13,
       color: "var(--gris)"
     }
-  }, "Todavía no hay alumnos en esta clase."), roster.map(name => React.createElement("div", {
-    key: name,
-    style: {
-      fontSize: 13,
-      padding: "3px 0"
-    }
-  }, name)), React.createElement("div", {
+  }, "Todavía no hay alumnos en esta clase."), attendees.map((a, i) => {
+    const tc = typeColors[a.type];
+    return React.createElement("div", {
+      key: i,
+      style: {
+        fontSize: 13,
+        padding: "3px 0"
+      }
+    }, a.name, " ", a.type !== "fija" && React.createElement("span", {
+      className: "badge",
+      style: {
+        background: tc.bg,
+        color: tc.fg,
+        fontSize: 10,
+        marginLeft: 4
+      }
+    }, a.type));
+  }), React.createElement("div", {
     style: {
       fontWeight: 700,
       fontSize: 13,
@@ -7882,7 +7996,8 @@ function computeTeacherPay(year, month, {
   groups,
   attendance,
   rates,
-  tiers
+  tiers,
+  overrides
 }) {
   const seen = {};
   attendance.forEach(a => {
@@ -7902,17 +8017,20 @@ function computeTeacherPay(year, month, {
     const g = groups.find(gg => gg.id === s.gid);
     if (!g) return;
     if (g.pay_model === "revenue_share") return; // esta clase se paga por reparto de ingresos, no por horas
+    // Si hay una sustitución para esta clase concreta ese día, el pago va a la sustituta, no a la profesora habitual
+    const override = (overrides||[]).find(o => o.group_id === s.gid && o.session_date === s.date);
+    const teacherOfDay = override ? override.substitute_teacher : g.teacher;
     const hours = hoursOfGroup(g);
-    const rate = rates.find(r => r.teacher_name === g.teacher)?.rate_per_hour || 0;
+    const rate = rates.find(r => r.teacher_name === teacherOfDay)?.rate_per_hour || 0;
     const bonus = tierBonusFor(g.current_count || 0, tiers);
-    byTeacher[g.teacher] = byTeacher[g.teacher] || {
+    byTeacher[teacherOfDay] = byTeacher[teacherOfDay] || {
       hours: 0,
       total: 0,
       sessions: 0
     };
-    byTeacher[g.teacher].hours += hours;
-    byTeacher[g.teacher].sessions += 1;
-    byTeacher[g.teacher].total += hours * (rate + bonus);
+    byTeacher[teacherOfDay].hours += hours;
+    byTeacher[teacherOfDay].sessions += 1;
+    byTeacher[teacherOfDay].total += hours * (rate + bonus);
   });
   return byTeacher;
 }
@@ -7985,7 +8103,8 @@ function computeTeacherSessionsDetail(teacherName, year, month, {
   groups,
   attendance,
   rates,
-  tiers
+  tiers,
+  overrides
 }) {
   const seen = {};
   attendance.forEach(a => {
@@ -7997,13 +8116,16 @@ function computeTeacherSessionsDetail(teacherName, year, month, {
   const rows = Object.keys(seen).map(k => {
     const [gid, date] = k.split("::");
     const g = groups.find(gg => gg.id === parseInt(gid));
-    if (!g || g.teacher !== teacherName) return null;
+    if (!g) return null;
+    const override = (overrides||[]).find(o => o.group_id === parseInt(gid) && o.session_date === date);
+    const teacherOfDay = override ? override.substitute_teacher : g.teacher;
+    if (teacherOfDay !== teacherName) return null;
     const hours = hoursOfGroup(g);
     const students = g.current_count || 0;
     const bonus = tierBonusFor(students, tiers);
     return {
       date,
-      groupName: g.name,
+      groupName: g.name + (override ? " (sustitución)" : ""),
       day: g.day,
       hours,
       students,
@@ -8021,14 +8143,16 @@ function TeacherDetailTable({
   groups,
   attendance,
   rates,
-  tiers
+  tiers,
+  overrides
 }) {
   const rows = useMemo(() => computeTeacherSessionsDetail(teacherName, year, month, {
     groups,
     attendance,
     rates,
-    tiers
-  }), [teacherName, year, month, groups, attendance, rates, tiers]);
+    tiers,
+    overrides
+  }), [teacherName, year, month, groups, attendance, rates, tiers, overrides]);
   const weekChart = useMemo(() => {
     const byWeek = {};
     rows.forEach(r => {
@@ -8061,6 +8185,146 @@ function TeacherDetailTable({
     color: "var(--verde)"
   }));
 }
+function SubstitutionsManager({
+  groups
+}) {
+  const [overrides, setOverrides] = useState([]);
+  const [adding, setAdding] = useState(false);
+  const [groupId, setGroupId] = useState("");
+  const [date, setDate] = useState(todayISO);
+  const [substitute, setSubstitute] = useState(TEACHERS[0]);
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState("");
+  function load() {
+    sb.from("session_teacher_overrides").select("*").gte("session_date", todayISO).order("session_date").then(({
+      data
+    }) => setOverrides(data || []));
+  }
+  useEffect(load, []);
+  async function save() {
+    if (!groupId) {
+      setMsg("Elige una clase.");
+      return;
+    }
+    setSaving(true);
+    setMsg("");
+    const {
+      error
+    } = await sb.from("session_teacher_overrides").upsert({
+      group_id: parseInt(groupId),
+      session_date: date,
+      substitute_teacher: substitute,
+      created_by: "dirección"
+    }, {
+      onConflict: "group_id,session_date"
+    });
+    setSaving(false);
+    if (error) {
+      setMsg("❌ " + error.message);
+      return;
+    }
+    setAdding(false);
+    setGroupId("");
+    load();
+  }
+  async function remove(id) {
+    if (!window.confirm("¿Quitar esta sustitución?")) return;
+    await sb.from("session_teacher_overrides").delete().eq("id", id);
+    load();
+  }
+  return React.createElement("div", {
+    className: "card",
+    style: {
+      marginBottom: 14
+    }
+  }, React.createElement("h4", {
+    style: {
+      marginTop: 0
+    }
+  }, "🔄 Sustituciones"), React.createElement("p", {
+    style: {
+      fontSize: 12,
+      color: "var(--gris)",
+      marginTop: -6
+    }
+  }, "Para cuando una profesora sustituye a otra en una clase concreta un día concreto. La sustituta verá esa clase ese día y el pago se le atribuirá a ella."), overrides.map(o => {
+    const g = groups.find(gg => gg.id === o.group_id);
+    return React.createElement("div", {
+      key: o.id,
+      style: {
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "center",
+        padding: "6px 0",
+        borderBottom: "1px solid #EEF2F8",
+        fontSize: 13
+      }
+    }, React.createElement("span", null, o.session_date, " — ", g?.name || "Clase", " (", g?.time_start, ", normalmente ", g?.teacher, ") → sustituye ", React.createElement("b", null, o.substitute_teacher)), React.createElement("button", {
+      className: "btn-ghost",
+      style: {
+        padding: "3px 8px",
+        fontSize: 11
+      },
+      onClick: () => remove(o.id)
+    }, "Quitar"));
+  }), overrides.length === 0 && React.createElement("div", {
+    className: "empty"
+  }, "Sin sustituciones programadas."), !adding ? React.createElement("button", {
+    className: "btn-ghost",
+    style: {
+      marginTop: 10
+    },
+    onClick: () => setAdding(true)
+  }, "+ Añadir sustitución") : React.createElement("div", {
+    style: {
+      marginTop: 10,
+      background: "var(--fondo)",
+      borderRadius: 10,
+      padding: 12
+    }
+  }, React.createElement(Field, {
+    label: "Clase"
+  }, React.createElement("select", {
+    value: groupId,
+    onChange: e => setGroupId(e.target.value)
+  }, React.createElement("option", {
+    value: ""
+  }, "Elige una clase…"), groups.map(g => React.createElement("option", {
+    key: g.id,
+    value: g.id
+  }, DNF[g.day - 1], " ", g.time_start, " · ", g.name, " · ", g.teacher)))), React.createElement(Field, {
+    label: "Fecha"
+  }, React.createElement("input", {
+    type: "date",
+    value: date,
+    onChange: e => setDate(e.target.value)
+  })), React.createElement(Field, {
+    label: "Profesora sustituta"
+  }, React.createElement("select", {
+    value: substitute,
+    onChange: e => setSubstitute(e.target.value)
+  }, TEACHERS.map(t => React.createElement("option", {
+    key: t,
+    value: t
+  }, t)))), msg && React.createElement("p", {
+    style: {
+      fontSize: 13,
+      color: "var(--rojo)"
+    }
+  }, msg), React.createElement("div", {
+    className: "row"
+  }, React.createElement("button", {
+    className: "btn-ghost",
+    onClick: () => {
+      setAdding(false);
+      setMsg("");
+    }
+  }, "Cancelar"), React.createElement("button", {
+    className: "btn-primary",
+    disabled: saving,
+    onClick: save
+  }, saving ? "Guardando…" : "Guardar"))));
+}
 function TeacherPayView({
   groups,
   attendance,
@@ -8073,12 +8337,15 @@ function TeacherPayView({
   const [year, setYear] = useState(CY);
   const [month, setMonth] = useState(CM);
   const [detailTeacher, setDetailTeacher] = useState(null);
+  const [overrides, setOverrides] = useState([]);
+  useEffect(() => { sb.from("session_teacher_overrides").select("*").then(({data}) => setOverrides(data||[])); }, []);
   const byTeacher = useMemo(() => computeTeacherPay(year, month, {
     groups,
     attendance,
     rates,
-    tiers
-  }), [year, month, groups, attendance, rates, tiers]);
+    tiers,
+    overrides
+  }), [year, month, groups, attendance, rates, tiers, overrides]);
   const shareByTeacher = useMemo(() => {
     const map = {};
     TEACHERS.forEach(t => {
@@ -8113,7 +8380,7 @@ function TeacherPayView({
   }
   const totalReal = TEACHERS.reduce((s, t) => s + realTotalFor(t), 0);
   const totalEstimado = TEACHERS.reduce((s, t) => s + estTotalFor(t), 0);
-  return React.createElement("div", null, React.createElement("div", {
+  return React.createElement("div", null, React.createElement(SubstitutionsManager, {groups: groups}), React.createElement("div", {
     className: "row",
     style: {
       marginBottom: 10,
@@ -8287,7 +8554,8 @@ function TeacherPayView({
     groups: groups,
     attendance: attendance,
     rates: rates,
-    tiers: tiers
+    tiers: tiers,
+    overrides: overrides
   })));
 }
 function WorkshopsView() {
@@ -9965,6 +10233,185 @@ function WeeklyDetailView({
     }));
   })));
 }
+function CleaningView({
+  myName
+}) {
+  const [requests, setRequests] = useState([]);
+  const [adding, setAdding] = useState(false);
+  const [area, setArea] = useState(CLEANING_AREAS[0]);
+  const [note, setNote] = useState("");
+  const [saving, setSaving] = useState(false);
+  function load() {
+    sb.from("cleaning_requests").select("*").order("created_at", {
+      ascending: false
+    }).then(({
+      data
+    }) => setRequests(data || []));
+  }
+  useEffect(load, []);
+  const upcoming = nextCleaningDates(3);
+  const pending = requests.filter(r => !r.resolved);
+  const resolved = requests.filter(r => r.resolved);
+  async function addRequest() {
+    setSaving(true);
+    await sb.from("cleaning_requests").insert({
+      area,
+      note: note.trim() || null,
+      requested_by: myName || "—"
+    });
+    setSaving(false);
+    setAdding(false);
+    setNote("");
+    setArea(CLEANING_AREAS[0]);
+    load();
+  }
+  async function markResolved(id) {
+    await sb.from("cleaning_requests").update({
+      resolved: true
+    }).eq("id", id);
+    load();
+  }
+  async function reopen(id) {
+    await sb.from("cleaning_requests").update({
+      resolved: false
+    }).eq("id", id);
+    load();
+  }
+  return React.createElement("div", null, React.createElement("div", {
+    className: "card",
+    style: {
+      marginBottom: 14
+    }
+  }, React.createElement("h3", {
+    style: {
+      marginTop: 0
+    }
+  }, "🧹 Próximas limpiezas"), React.createElement("p", {
+    style: {
+      fontSize: 13,
+      color: "var(--gris)",
+      marginTop: -6
+    }
+  }, "Limpieza general cada ", CLEANING_INTERVAL_DAYS, " días."), upcoming.map((d, i) => {
+    const dd = new Date(d + "T00:00:00");
+    return React.createElement("div", {
+      key: d,
+      style: {
+        fontSize: 14,
+        padding: "4px 0",
+        fontWeight: i === 0 ? 800 : 400,
+        color: i === 0 ? "var(--azul-oscuro)" : "inherit"
+      }
+    }, i === 0 ? "➡️ " : "", DNF[(dd.getDay() + 6) % 7], " ", dd.getDate(), " de ", MN[dd.getMonth() + 1]);
+  })), React.createElement("div", {
+    className: "card"
+  }, React.createElement("h3", {
+    style: {
+      marginTop: 0
+    }
+  }, "📋 Zonas que necesitan atención"), React.createElement("p", {
+    style: {
+      fontSize: 13,
+      color: "var(--gris)",
+      marginTop: -6
+    }
+  }, "Si detectas que una zona necesita más hincapié en la próxima limpieza, márcalo aquí — dirección se lo comunica a la persona de la limpieza."), pending.length === 0 && React.createElement("div", {
+    className: "empty"
+  }, "Nada pendiente ahora mismo."), pending.map(r => React.createElement("div", {
+    key: r.id,
+    style: {
+      display: "flex",
+      justifyContent: "space-between",
+      alignItems: "flex-start",
+      padding: "8px 0",
+      borderBottom: "1px solid #EEF2F8"
+    }
+  }, React.createElement("div", {
+    style: {
+      fontSize: 13
+    }
+  }, React.createElement("b", null, r.area), r.note && React.createElement("span", {
+    style: {
+      color: "var(--gris)"
+    }
+  }, " — ", r.note), React.createElement("div", {
+    style: {
+      fontSize: 11,
+      color: "var(--gris)"
+    }
+  }, "Avisado por ", r.requested_by || "—", " · ", new Date(r.created_at).toLocaleDateString("es-ES"))), React.createElement("button", {
+    className: "btn-ghost",
+    style: {
+      padding: "3px 8px",
+      fontSize: 11
+    },
+    onClick: () => markResolved(r.id)
+  }, "Ya comunicado ✓"))), !adding ? React.createElement("button", {
+    className: "btn-ghost",
+    style: {
+      marginTop: 10
+    },
+    onClick: () => setAdding(true)
+  }, "+ Avisar de una zona") : React.createElement("div", {
+    style: {
+      marginTop: 10,
+      background: "var(--fondo)",
+      borderRadius: 10,
+      padding: 12
+    }
+  }, React.createElement(Field, {
+    label: "Zona"
+  }, React.createElement("select", {
+    value: area,
+    onChange: e => setArea(e.target.value)
+  }, CLEANING_AREAS.map(a => React.createElement("option", {
+    key: a,
+    value: a
+  }, a)))), React.createElement(Field, {
+    label: "Detalle (opcional)"
+  }, React.createElement("input", {
+    value: note,
+    onChange: e => setNote(e.target.value),
+    placeholder: "Ej: manchas en la ventana del fondo"
+  })), React.createElement("div", {
+    className: "row"
+  }, React.createElement("button", {
+    className: "btn-ghost",
+    onClick: () => setAdding(false)
+  }, "Cancelar"), React.createElement("button", {
+    className: "btn-primary",
+    disabled: saving,
+    onClick: addRequest
+  }, saving ? "Guardando…" : "Avisar"))), resolved.length > 0 && React.createElement("div", {
+    style: {
+      marginTop: 16
+    }
+  }, React.createElement("div", {
+    style: {
+      fontWeight: 700,
+      fontSize: 12,
+      color: "var(--gris)",
+      marginBottom: 4
+    }
+  }, "YA COMUNICADAS"), resolved.slice(0, 10).map(r => React.createElement("div", {
+    key: r.id,
+    style: {
+      display: "flex",
+      justifyContent: "space-between",
+      alignItems: "center",
+      padding: "4px 0",
+      fontSize: 12,
+      color: "var(--gris)"
+    }
+  }, React.createElement("span", null, r.area, r.note && ` — ${r.note}`), React.createElement("button", {
+    className: "btn-ghost",
+    style: {
+      padding: "2px 6px",
+      fontSize: 10
+    },
+    onClick: () => reopen(r.id)
+  }, "Reabrir"))))));
+}
 function CEOApp({
   profile,
   onLogout
@@ -10033,7 +10480,7 @@ function CEOApp({
     key: "otros",
     icon: "◆",
     label: "Otros",
-    subtabs: [["workshops", "Talleres"], ["vouchers", "Bonos"], ["tienda", "Tienda"]]
+    subtabs: [["workshops", "Talleres"], ["vouchers", "Bonos"], ["tienda", "Tienda"], ["limpieza", "Limpieza"]]
   }, {
     key: "condiciones",
     icon: "≡",
@@ -10157,7 +10604,7 @@ function CEOApp({
     profiles: profiles,
     extraEnrollments: extraEnrollments,
     familyMembers: familyMembers
-  }), tab === "workshops" && React.createElement(WorkshopsView, null), tab === "vouchers" && React.createElement(VouchersView, null), tab === "tienda" && React.createElement(MaterialsShopCEOView, null), tab === "expenses" && React.createElement(ExpensesView, {
+  }), tab === "workshops" && React.createElement(WorkshopsView, null), tab === "vouchers" && React.createElement(VouchersView, null), tab === "tienda" && React.createElement(MaterialsShopCEOView, null), tab === "limpieza" && React.createElement(CleaningView, {myName: "Dirección"}), tab === "expenses" && React.createElement(ExpensesView, {
     expenses: expenses,
     reload: load
   }), tab === "historico" && React.createElement(HistoricalFinanceView, {
