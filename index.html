@@ -29,7 +29,15 @@
   .btn-ghost{background:#fff;color:var(--azul-oscuro);border:2px solid #D8E3F5;}
   .btn-danger{background:var(--rojo);color:#fff;}
   .card{background:#fff;border-radius:16px;padding:18px;box-shadow:0 2px 12px rgba(35,80,160,.08);}
-  .container{max-width:1100px;margin:0 auto;padding:16px;}
+  .container{max-width:1100px;margin:0 auto;padding:16px;padding-bottom:84px;}
+  .bottomnav{position:fixed;bottom:0;left:0;right:0;background:#fff;border-top:1px solid #E2E8F0;display:flex;justify-content:space-around;align-items:stretch;padding:4px 2px calc(4px + env(safe-area-inset-bottom,0px));z-index:150;box-shadow:0 -2px 10px rgba(0,0,0,0.06);}
+  .bottomnav-item{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;padding:6px 2px;background:none;border:none;cursor:pointer;color:var(--gris);min-width:0;}
+  .bottomnav-item.active{color:var(--azul-oscuro);}
+  .bottomnav-icon{font-size:19px;line-height:1;}
+  .bottomnav-label{font-size:10px;line-height:1.1;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;}
+  .subnav{display:flex;gap:6px;overflow-x:auto;padding-bottom:10px;margin-bottom:14px;-webkit-overflow-scrolling:touch;}
+  .subnav-item{flex-shrink:0;padding:6px 14px;border-radius:20px;background:var(--fondo);color:var(--azul-oscuro);font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap;}
+  .subnav-item.active{background:var(--azul-oscuro);color:#fff;}
   .row{display:flex;gap:12px;flex-wrap:wrap;}
   .col{flex:1;min-width:220px;}
   .badge{display:inline-block;padding:3px 10px;border-radius:999px;font-size:12px;font-weight:700;}
@@ -165,7 +173,7 @@ const MN = ["", "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", 
 const STANDARD_ENROLLMENT_FEE = 10;
 const COURSE_START = "2026-09-09";
 const COURSE_END = "2027-06-30";
-const NEXT_CLEANING_DATE = "2026-09-12"; // TODO: ajustar a la fecha real de la próxima limpieza
+const NEXT_CLEANING_DATE = "2026-09-21";
 const CLEANING_INTERVAL_DAYS = 14;
 const CLEANING_AREAS = ["Ventanas","Zona exterior","Sala clases","Sala talleres","Baño clases","Baño talleres","Suelos","Mesas","Sillas"];
 function nextCleaningDates(count){
@@ -740,11 +748,12 @@ function DateInputES({
   }, yr))));
 }
 function WeeklyTimetable({
-  groups,
+  groups: allGroupsIn,
   profiles,
   onSelect,
   selectedId
 }) {
+  const groups = allGroupsIn.filter(g => g.active !== false);
   const scrollRef = useRef(null);
   function onWheel(e) {
     const el = scrollRef.current;
@@ -2353,6 +2362,7 @@ function RecoveryBookingPanel({
   const [bookings, setBookings] = useState([]);
   const [allCancellations, setAllCancellations] = useState([]);
   const [allBookings, setAllBookings] = useState([]);
+  const [manualCredits, setManualCredits] = useState([]);
   const [msg, setMsg] = useState("");
   const [weekOffset, setWeekOffset] = useState(0);
   function load() {
@@ -2368,6 +2378,9 @@ function RecoveryBookingPanel({
     sb.from("session_bookings").select("*").is("cancelled_at", null).then(({
       data
     }) => setAllBookings(data || []));
+    sb.from("manual_recovery_credits").select("*").eq("student_id", profile.id).then(({
+      data
+    }) => setManualCredits(data || []));
   }
   useEffect(load, []);
   function creditsForMonth(y, m) {
@@ -2380,17 +2393,18 @@ function RecoveryBookingPanel({
       const d = new Date(b.session_date + "T00:00:00");
       return d.getFullYear() === y && d.getMonth() + 1 === m;
     }).length;
-    return Math.max(0, cancels - recs);
+    const manual = manualCredits.filter(mc => mc.year === y && mc.month === m).reduce((s, mc) => s + mc.amount, 0);
+    return Math.max(0, cancels + manual - recs);
   }
   const totalCredits = useMemo(() => {
-    const months = new Set(cancellations.map(c => c.session_date.slice(0, 7)));
+    const months = new Set([...cancellations.map(c => c.session_date.slice(0, 7)), ...manualCredits.map(mc => `${mc.year}-${String(mc.month).padStart(2,"0")}`)]);
     let total = 0;
     months.forEach(ym => {
       const [y, m] = ym.split("-").map(Number);
       total += creditsForMonth(y, m);
     });
     return total;
-  }, [cancellations, bookings]);
+  }, [cancellations, bookings, manualCredits]);
   function spotsFor(g, date) {
     const cancelsThatDay = allCancellations.filter(c => c.group_id === g.id && c.session_date === date).length;
     const bookingsThatDay = allBookings.filter(b => b.group_id === g.id && b.session_date === date).length;
@@ -2416,6 +2430,7 @@ function RecoveryBookingPanel({
       const dow = i + 1;
       if (!isSchoolDay(date)) return;
       groups.forEach(g => {
+        if (g.active === false) return;
         if ((myGroupIds || []).includes(g.id)) return;
         if (g.day !== dow) return;
         if (g.start_date && date < g.start_date) return;
@@ -3379,6 +3394,7 @@ function FlexBookingPanel({
       const dow = i + 1;
       if (!isSchoolDay(date)) return;
       groups.forEach(g => {
+        if (g.active === false) return;
         if (g.day !== dow) return;
         if (g.start_date && date < g.start_date) return;
         if (hoursUntil(date, g.time_start) < 3) return;
@@ -3955,6 +3971,304 @@ function SubscriptionModeSwitcher({
     onClick: confirmChange
   }, saving ? "Guardando…" : "Confirmar cambio"))));
 }
+function NotificationBell({
+  profile,
+  items
+}) {
+  const [open, setOpen] = useState(false);
+  const [checked, setChecked] = useState(false);
+  function toggle() {
+    const willOpen = !open;
+    setOpen(willOpen);
+    if (willOpen && !checked) {
+      setChecked(true);
+      sb.from("profiles").update({
+        last_dashboard_visit: new Date().toISOString()
+      }).eq("id", profile.id);
+    }
+  }
+  const count = items.length;
+  return React.createElement("div", {
+    style: {
+      position: "relative"
+    }
+  }, React.createElement("button", {
+    onClick: toggle,
+    style: {
+      background: "none",
+      border: "none",
+      fontSize: 22,
+      cursor: "pointer",
+      position: "relative",
+      padding: 4,
+      color: "#fff"
+    }
+  }, "🔔", count > 0 && React.createElement("span", {
+    style: {
+      position: "absolute",
+      top: 0,
+      right: 0,
+      background: "var(--rojo)",
+      color: "#fff",
+      borderRadius: "50%",
+      minWidth: 16,
+      height: 16,
+      fontSize: 10,
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      fontWeight: 700,
+      padding: "0 3px"
+    }
+  }, count)), open && React.createElement("div", {
+    style: {
+      position: "absolute",
+      top: "120%",
+      right: 0,
+      background: "#fff",
+      borderRadius: 12,
+      boxShadow: "0 6px 24px rgba(0,0,0,0.2)",
+      width: 290,
+      maxHeight: 380,
+      overflowY: "auto",
+      zIndex: 200
+    }
+  }, React.createElement("div", {
+    style: {
+      padding: "10px 12px",
+      fontWeight: 800,
+      color: "var(--azul-oscuro)",
+      borderBottom: "1px solid #EEF2F8",
+      fontSize: 13
+    }
+  }, "Notificaciones"), items.length === 0 && React.createElement("div", {
+    style: {
+      padding: 16,
+      fontSize: 13,
+      color: "var(--gris)",
+      textAlign: "center"
+    }
+  }, "Sin novedades por ahora ✓"), items.map((it, i) => React.createElement("div", {
+    key: i,
+    style: {
+      padding: "10px 12px",
+      fontSize: 13,
+      borderBottom: "1px solid #EEF2F8",
+      color: it.urgent ? "var(--rojo)" : "#333"
+    }
+  }, it.urgent ? "⚠️ " : "• ", it.text))));
+}
+function getStudentNotifications(profile, group, extraGroups, payments, classNotes, lastCheck) {
+  const items = [];
+  const due = computeDueMonth(profile, payments);
+  if (due) {
+    const duePayment = payments.find(p => p.year === due.year && p.month === due.month);
+    if (!duePayment || duePayment.status === "pending") {
+      items.push({
+        text: `Falta subir el justificante de ${MN[due.month]}`,
+        urgent: true
+      });
+    }
+  }
+  [group, ...(extraGroups || [])].filter(Boolean).forEach(g => {
+    if ((g.current_count || 0) <= 2) {
+      items.push({
+        text: `Tu clase de ${g.name} tiene pocos alumnos — podría no salir`,
+        urgent: true
+      });
+    }
+  });
+  if (lastCheck) {
+    const since = new Date(lastCheck);
+    const newNotes = (classNotes || []).filter(n => new Date(n.created_at) > since);
+    if (newNotes.length > 0) {
+      items.push({
+        text: `${newNotes.length} mensaje${newNotes.length !== 1 ? "s" : ""} nuevo${newNotes.length !== 1 ? "s" : ""} de tu profesora`,
+        urgent: false
+      });
+    }
+  }
+  const upcoming = nextClosure(todayISO);
+  if (upcoming) {
+    const d = new Date(upcoming.start + "T00:00:00");
+    const daysUntil = Math.round((d - new Date(todayISO + "T00:00:00")) / 86400000);
+    if (daysUntil >= 0 && daysUntil <= 7) {
+      items.push({
+        text: `${upcoming.label} el ${d.getDate()}/${d.getMonth() + 1} — ese día no hay clase`,
+        urgent: false
+      });
+    }
+  }
+  return items;
+}
+function getTeacherNotifications(profile, groups, allProfiles, extraEnrollments, familyMembers, lastCheck) {
+  const items = [];
+  const myGroups = groups.filter(g => g.teacher === profile.teacher_name && g.active !== false);
+  myGroups.forEach(g => {
+    const roster = effectiveRoster(g, allProfiles, extraEnrollments, familyMembers);
+    if (roster.length <= 2) {
+      items.push({
+        text: `${g.name} (${DNF[g.day - 1]} ${g.time_start}) tiene pocos alumnos`,
+        urgent: true
+      });
+    } else if (roster.length >= capOf(g)) {
+      items.push({
+        text: `${g.name} (${DNF[g.day - 1]} ${g.time_start}) está al completo`,
+        urgent: false
+      });
+    }
+  });
+  if (lastCheck) {
+    const since = new Date(lastCheck);
+    const myGroupIds = myGroups.map(g => g.id);
+    const newDirect = allProfiles.filter(p => p.role === "student" && myGroupIds.includes(p.group_id) && p.created_at && new Date(p.created_at) > since);
+    const newExtra = (extraEnrollments || []).filter(e => myGroupIds.includes(e.group_id) && e.created_at && new Date(e.created_at) > since);
+    const newFamily = (familyMembers || []).filter(f => myGroupIds.includes(f.group_id) && f.created_at && new Date(f.created_at) > since);
+    const total = newDirect.length + newExtra.length + newFamily.length;
+    if (total > 0) {
+      items.push({
+        text: `${total} alumno${total !== 1 ? "s" : ""} nuevo${total !== 1 ? "s" : ""} en tus clases`,
+        urgent: false
+      });
+    }
+  }
+  return items;
+}
+function BottomNav({
+  items,
+  active,
+  onSelect
+}) {
+  return React.createElement("div", {
+    className: "bottomnav"
+  }, items.map(it => React.createElement("button", {
+    key: it.key,
+    className: "bottomnav-item" + (active === it.key ? " active" : ""),
+    onClick: () => onSelect(it.key)
+  }, React.createElement("span", {
+    className: "bottomnav-icon"
+  }, it.icon), React.createElement("span", {
+    className: "bottomnav-label"
+  }, it.label))));
+}
+function HelpSection({
+  title,
+  children
+}) {
+  const [open, setOpen] = useState(false);
+  return React.createElement("div", {
+    style: {
+      borderBottom: "1px solid #EEF2F8",
+      padding: "10px 0"
+    }
+  }, React.createElement("div", {
+    style: {
+      display: "flex",
+      justifyContent: "space-between",
+      alignItems: "center",
+      cursor: "pointer"
+    },
+    onClick: () => setOpen(o => !o)
+  }, React.createElement("b", {
+    style: {
+      fontSize: 14,
+      color: "var(--azul-oscuro)"
+    }
+  }, title), React.createElement("span", {
+    style: {
+      fontSize: 13,
+      color: "var(--gris)"
+    }
+  }, open ? "▲" : "▼")), open && React.createElement("div", {
+    style: {
+      fontSize: 13,
+      marginTop: 8,
+      lineHeight: 1.6,
+      color: "#333"
+    }
+  }, children));
+}
+function HelpGuide({
+  role
+}) {
+  const [expanded, setExpanded] = useState(false);
+  return React.createElement("div", {
+    className: "card",
+    style: {
+      marginBottom: 14,
+      borderLeft: "4px solid var(--verde)"
+    }
+  }, React.createElement("div", {
+    style: {
+      display: "flex",
+      justifyContent: "space-between",
+      alignItems: "center",
+      cursor: "pointer"
+    },
+    onClick: () => setExpanded(e => !e)
+  }, React.createElement("h3", {
+    style: {
+      margin: 0
+    }
+  }, "❓ ¿Cómo funciona la app?"), React.createElement("button", {
+    className: "btn-ghost",
+    style: {
+      padding: "4px 10px",
+      fontSize: 12
+    }
+  }, expanded ? "Ocultar" : "Ver guía")), expanded && React.createElement("div", {
+    style: {
+      marginTop: 12
+    }
+  }, role === "student" && React.createElement(StudentHelp, null), role === "teacher" && React.createElement(TeacherHelp, null), role === "ceo" && React.createElement(CEOHelp, null)));
+}
+function StudentHelp() {
+  return React.createElement("div", null, React.createElement(HelpSection, {
+    title: "🎨 Mi clase"
+  }, React.createElement("p", null, "Aquí ves tu clase principal (día, hora y profesora) y cualquier clase extra que tengas. Si tu clase tiene pocos alumnos, verás un aviso — no significa que se cancele seguro, pero conviene saberlo."), React.createElement("p", null, React.createElement("b", null, "Cambiar de modalidad:"), " puedes pasar de clase fija a suscripción flexible (o al revés) desde el botón de arriba. Si el curso ya ha empezado, el cambio se aplica el mes siguiente (el mes en curso ya está comprometido); si aún no ha empezado, puedes elegir aplicarlo ya."), React.createElement("p", null, React.createElement("b", null, "Mi familia:"), " si vienes con tu hijo/a u otra persona sin su propio email, puedes darle de alta aquí — pagáis juntos, con el descuento por varias clases ya aplicado."), React.createElement("p", null, React.createElement("b", null, "Quitar una clase:"), " tienes un botón \"Quitar\" junto a cada clase. Si tienes más de una y quitas la principal, la otra pasa a ser tu clase principal automáticamente.")), React.createElement(HelpSection, {
+    title: "💳 Pagos"
+  }, React.createElement("p", null, "Aquí ves cuánto te toca pagar cada mes y puedes subir el justificante de la transferencia. Si tienes matrícula pendiente, el importe ya la incluye."), React.createElement("p", null, React.createElement("b", null, "Planes:"), " mensual (pagas cada mes), trimestral y curso completo tienen descuento. Puedes cambiar de plan aquí mismo."), React.createElement("p", null, React.createElement("b", null, "Si no consigues subir la foto"), " (pasa a veces en algunos móviles): usa el botón \"Enviarlo por WhatsApp\" — se abre el chat con tu profesora ya escrito, adjunta la foto y listo."), React.createElement("p", null, React.createElement("b", null, "Estados de tu pago:"), " Pendiente (nada hecho todavía) · Justificante subido (esperando que lo validen) · Avisado por WhatsApp (igual, esperando validación) · Validado (ya está, todo en orden).")), React.createElement(HelpSection, {
+    title: "🔁 Recuperaciones"
+  }, React.createElement("p", null, "Si vas a faltar a tu clase, cancélala con al menos 5 horas de antelación desde aquí — te da un crédito de recuperación para ese mes."), React.createElement("p", null, React.createElement("b", null, "Usar el crédito:"), " en el calendario de abajo, elige cualquier otra clase con hueco libre esa semana y resérvala como recuperación."), React.createElement("p", null, React.createElement("b", null, "Suscripción flexible o bono:"), " en vez de una clase fija cada semana, reservas cada vez la que te venga bien. Arriba ves cuántas sesiones te quedan. \"Mis próximas reservas\" te muestra lo que ya tienes apuntado, con botón para cancelar si cambia algo.")), React.createElement(HelpSection, {
+    title: "📣 Avisos"
+  }, React.createElement("p", null, "Aquí ves los mensajes que tu profesora deja para toda la clase (por ejemplo, qué material traer). La campanita 🔔 de arriba te avisa cuando hay uno nuevo.")), React.createElement(HelpSection, {
+    title: "👤 Mis datos"
+  }, React.createElement("p", null, "Revisa que tu teléfono esté bien puesto — lo necesitamos para poder localizarte si hace falta. También puedes indicar aquí si prefieres pagar por transferencia o en efectivo.")), React.createElement(HelpSection, {
+    title: "🛍️ Tienda"
+  }, React.createElement("p", null, "Aquí ves qué materiales necesitas para tu clase concreta, y si algunos los vende la propia academia, puedes pedirlos directamente.")), React.createElement(HelpSection, {
+    title: "🔔 La campanita"
+  }, React.createElement("p", null, "Te avisa de lo importante: pagos pendientes, mensajes nuevos, si tu clase tiene pocos alumnos, o si hay un festivo próximo sin clase. Tócala para ver el detalle.")));
+}
+function TeacherHelp() {
+  return React.createElement("div", null, React.createElement(HelpSection, {
+    title: "📅 Mis clases por día / 🗂️ Todas mis clases"
+  }, React.createElement("p", null, "\"Mis clases por día\" te muestra un día concreto (puedes moverte con las flechas o elegir fecha). Al abrir \"Ver alumnos y avisos\" en una clase, ves exactamente quién viene ese día en concreto — incluye a quien haya reservado con su bono o suscripción flexible, a quien venga de recuperación, y ya no cuenta a quien haya cancelado justo ese día."), React.createElement("p", null, "\"Todas mis clases\" es la vista general de tu horario semanal fijo, sin entrar en el detalle de un día concreto.")), React.createElement(HelpSection, {
+    title: "✅ Pasar lista"
+  }, React.createElement("p", null, "Para cada alumno marca: ✓ asistió, ↩ recuperable (le das el hueco como si hubiera cancelado ella, para casos puntuales), ✗ no asistió."), React.createElement("p", null, "💶 Me ha pagado en efectivo hoy: si alguien te paga en mano ese día, marca este botón. Se lo notifica automáticamente a dirección para que lo valide, y queda registrado en la caja de efectivo de la academia — no hace falta que se lo digas aparte.")), React.createElement(HelpSection, {
+    title: "🔄 Sustituciones"
+  }, React.createElement("p", null, "Si vas a sustituir a otra profesora un día concreto, dirección lo programa desde su panel. Ese día, la clase te aparecerá a ti (con un aviso de \"Hoy sustituyes a...\"), y el pago de esa sesión se te atribuye a ti, no a la profesora habitual.")), React.createElement(HelpSection, {
+    title: "⏱️ Mis horas"
+  }, React.createElement("p", null, "Aquí ves cuánto vas a cobrar. La mayoría de clases se calculan por horas dadas (según has pasado lista); algunas clases concretas (como Aerografía) se pagan por reparto de ingresos — un % de lo que paguen los alumnos de esa clase, no por hora. Si es tu caso, lo verás desglosado aparte, claramente explicado."), React.createElement("p", null, "El detalle día a día te muestra exactamente qué sesiones cuentan y cuánto suma cada una.")), React.createElement(HelpSection, {
+    title: "🧹 Limpieza"
+  }, React.createElement("p", null, "Aquí ves cuándo toca la próxima limpieza general, y el código del cajetín de llaves (por si necesitas las llaves auxiliares). Si detectas que alguna zona necesita más atención (ventanas, suelos, baños...), avísalo aquí — dirección se lo comunica a la persona de la limpieza.")), React.createElement(HelpSection, {
+    title: "🔔 La campanita"
+  }, React.createElement("p", null, "Te avisa si algún alumno nuevo se ha apuntado a tus clases, si alguna se te ha quedado con pocos alumnos, o si se te ha completado un grupo.")));
+}
+function CEOHelp() {
+  return React.createElement("div", null, React.createElement(HelpSection, {
+    title: "⌂ Dashboard"
+  }, React.createElement("p", null, "Tu resumen general: KPIs operativos (alumnado, ocupación, altas) y económicos (ingresos, gastos, balance real y previsto). El \"balance previsto\" incluye una estimación de los meses futuros según quién está activo hoy — no predice altas o bajas que aún no han pasado."), React.createElement("p", null, "El panel \"Desde tu última visita\" te resume qué ha cambiado desde la última vez que entraste. La caja de efectivo suma automáticamente lo que las profesoras reportan al pasar lista, y tú registras aquí tus retiradas.")), React.createElement(HelpSection, {
+    title: "◈ Alumnado"
+  }, React.createElement("p", null, "Clases: crea, edita o cancela clases. Cancelar una clase (cuando no sale por falta de alumnado) la quita del horario y del pago a profesoras, sin borrar su historial — reubica antes a quien tuviera esa clase."), React.createElement("p", null, "Esta semana: resumen de toda la semana con el detalle real de cada clase al pulsar — igual que ven las profesoras."), React.createElement("p", null, "Alumnos: edita cualquier perfil, gestiona sus clases asignadas, dale créditos de recuperación extra o resérvale una recuperación tú misma.")), React.createElement(HelpSection, {
+    title: "€ Económico"
+  }, React.createElement("p", null, "Pagos: valida justificantes, marca pagos manuales, y revisa los avisos de WhatsApp o efectivo pendientes de confirmar."), React.createElement("p", null, "Gastos: registra gastos reales, y define gastos recurrentes (alquiler, autónomos...) para que el dashboard pueda estimar meses futuros — con un botón para \"confirmarlos\" como gasto real de un mes concreto sin volver a escribirlos."), React.createElement("p", null, "Histórico: tu contabilidad de años anteriores, con avisos si algún concepto se dispara respecto a otros años.")), React.createElement(HelpSection, {
+    title: "✎ Profesoras"
+  }, React.createElement("p", null, "Pago real (según asistencia) y estimado (según calendario y alumnado inscrito hoy) de cada profesora. Aquí también programas las sustituciones.")), React.createElement(HelpSection, {
+    title: "◆ Otros"
+  }, React.createElement("p", null, "Talleres, Bonos (de alumnas y regalo — recuerda que los regalo son para talleres, no para clases semanales), Tienda de materiales, y Limpieza (calendario y código de llaves).")), React.createElement(HelpSection, {
+    title: "🔔 La campanita"
+  }, React.createElement("p", null, "Tu resumen de lo urgente: inscripciones sin completar, clases con poca ocupación, y todo lo pendiente de validar (justificantes, WhatsApp, efectivo).")));
+}
 function StudentApp({
   profile,
   onLogout
@@ -4029,6 +4343,27 @@ function StudentApp({
   const allPaidUp = dueInfo === null;
   const thisMonthPayment = dueInfo ? payments.find(p => p.year === duePaymentYear && p.month === duePaymentMonth) : null;
   const myGroupIds = [profile.group_id, ...extraGroups.map(g => g.id)].filter(Boolean);
+  const [myLastCheck, setMyLastCheck] = useState(null);
+  const [myClassNotes, setMyClassNotes] = useState([]);
+  useEffect(() => {
+    sb.from("profiles").select("last_dashboard_visit").eq("id",profile.id).single().then(({data}) => setMyLastCheck(data?.last_dashboard_visit || null));
+  }, []);
+  useEffect(() => {
+    if(myGroupIds.length === 0){ setMyClassNotes([]); return; }
+    sb.from("class_notes").select("*").in("group_id", myGroupIds).then(({data}) => setMyClassNotes(data||[]));
+  }, [myGroupIds.join(",")]);
+  const studentNotifItems = useMemo(() => getStudentNotifications(profile, group, extraGroups, payments, myClassNotes, myLastCheck), [profile, group, extraGroups, payments, myClassNotes, myLastCheck]);
+  const studentBottomItems = [
+    {key:"clase", icon:"🎨", label:"Mi clase"},
+    {key:"pagos", icon:"💳", label:"Pagos"},
+    {key:"recuperar", icon:"🔁", label:"Recup."},
+    ...(myGroupIds.length > 0 ? [{key:"avisos", icon:"📣", label:"Avisos"}] : []),
+    {key:"mas", icon:"⋯", label:"Más"}
+  ];
+  function handleBottomSelect(key){
+    if(key === "mas") setTab(["misdatos","tienda","condiciones"].includes(tab) ? tab : "misdatos");
+    else setTab(key);
+  }
   function hasStartedForDue(group){
     if(!group || !group.start_date || !dueInfo) return true;
     const startKey = parseInt(group.start_date.slice(0,4))*12 + parseInt(group.start_date.slice(5,7));
@@ -4220,10 +4555,12 @@ function StudentApp({
   }, React.createElement(Logo, {
     size: 30,
     dark: true
-  }), React.createElement("button", {
+  }), React.createElement("div", {className:"row", style:{gap:10,alignItems:"center"}},
+    React.createElement(NotificationBell, {profile: profile, items: studentNotifItems}),
+    React.createElement("button", {
     className: "btn-ghost",
     onClick: onLogout
-  }, "Salir")), React.createElement("div", {
+  }, "Salir"))), React.createElement("div", {
     className: "container"
   }, isBirthday(profile.birthdate) && React.createElement(BirthdayBanner, {
     name: profile.display_name
@@ -4248,33 +4585,11 @@ function StudentApp({
       color: "var(--azul-oscuro)",
       marginBottom: 10
     }
-  }, "¡Hola, ", profile.display_name.split(" ")[0], "! 👋"), myGroupIds.length > 0 && React.createElement(CalendarInfoBanner, {enrollmentStartYear: profile.enrollment_start_year, enrollmentStartMonth: profile.enrollment_start_month}), React.createElement("div", {
-    className: "tabs",
-    style: {
-      marginBottom: 14
-    }
-  }, React.createElement("div", {
-    className: "tab " + (tab === "clase" ? "active" : ""),
-    onClick: () => setTab("clase")
-  }, "Mi clase"), React.createElement("div", {
-    className: "tab " + (tab === "pagos" ? "active" : ""),
-    onClick: () => setTab("pagos")
-  }, "Pagos"), React.createElement("div", {
-    className: "tab " + (tab === "recuperar" ? "active" : ""),
-    onClick: () => setTab("recuperar")
-  }, "Recuperaciones"), myGroupIds.length > 0 && React.createElement("div", {
-    className: "tab " + (tab === "avisos" ? "active" : ""),
-    onClick: () => setTab("avisos")
-  }, "Avisos"), React.createElement("div", {
-    className: "tab " + (tab === "misdatos" ? "active" : ""),
-    onClick: () => setTab("misdatos")
-  }, "Mis datos"), React.createElement("div", {
-    className: "tab " + (tab === "tienda" ? "active" : ""),
-    onClick: () => setTab("tienda")
-  }, "Tienda"), React.createElement("div", {
-    className: "tab " + (tab === "condiciones" ? "active" : ""),
-    onClick: () => setTab("condiciones")
-  }, "Condiciones")), tab === "clase" && React.createElement(SubscriptionModeSwitcher, {profile: profile, onChanged: () => window.location.reload()}), tab === "clase" && React.createElement("div", {
+  }, "¡Hola, ", profile.display_name.split(" ")[0], "! 👋"), myGroupIds.length > 0 && React.createElement(CalendarInfoBanner, {enrollmentStartYear: profile.enrollment_start_year, enrollmentStartMonth: profile.enrollment_start_month}), (["misdatos","tienda","condiciones"].includes(tab)) && React.createElement("div", {className:"subnav"},
+    React.createElement("div", {className:"subnav-item"+(tab==="misdatos"?" active":""), onClick:()=>setTab("misdatos")}, "👤 Mis datos"),
+    React.createElement("div", {className:"subnav-item"+(tab==="tienda"?" active":""), onClick:()=>setTab("tienda")}, "🛍️ Tienda"),
+    React.createElement("div", {className:"subnav-item"+(tab==="condiciones"?" active":""), onClick:()=>setTab("condiciones")}, "📋 Condiciones")
+  ), tab === "clase" && React.createElement(SubscriptionModeSwitcher, {profile: profile, onChanged: () => window.location.reload()}), tab === "clase" && React.createElement("div", {
     className: "card",
     style: {
       marginBottom: 14
@@ -4452,7 +4767,7 @@ function StudentApp({
   }), tab === "tienda" && React.createElement(MaterialsShopStudentView, {
     profile: profile,
     myClassNames: [group, ...extraGroups].filter(Boolean).map(g => g.name)
-  }), tab === "condiciones" && React.createElement(ConditionsAndPricingView, {
+  }), tab === "condiciones" && React.createElement(HelpGuide, {role: "student"}), tab === "condiciones" && React.createElement(ConditionsAndPricingView, {
     groups: allGroups
   }), tab === "pagos" && React.createElement(React.Fragment, null, React.createElement("div", {
     className: "card",
@@ -4665,11 +4980,12 @@ function StudentApp({
     className: "badge badge-bad"
   }, "Pendiente")))))), payments.length === 0 && React.createElement("div", {
     className: "empty"
-  }, "Aún no hay pagos registrados.")))));
+  }, "Aún no hay pagos registrados."))), React.createElement(BottomNav, {items: studentBottomItems, active: (["misdatos","tienda","condiciones"].includes(tab) ? "mas" : tab), onSelect: handleBottomSelect})));
 }
 function SessionModal({
   group,
   date,
+  groups,
   profiles,
   extraEnrollments,
   familyMembers,
@@ -4714,13 +5030,25 @@ function SessionModal({
     });
   }, []);
   function cashPendingInfo(p) {
-    if (!p || p.preferred_payment_method !== "efectivo") return null;
+    if (!p) return null;
     const paymentsOf = (payments || []).filter(pp => pp.student_id === p.id);
     const due = computeDueMonth(p, paymentsOf);
     if (!due) return null;
     const existing = paymentsOf.find(pp => pp.year === due.year && pp.month === due.month);
     if (existing && (existing.status === "validated" || existing.status === "cash_reported")) return null;
     return due;
+  }
+  function realFeeFor(p, asOfYear, asOfMonth) {
+    const asOfKey = asOfYear * 12 + asOfMonth;
+    function hasStarted(g2) {
+      if (!g2 || !g2.start_date) return true;
+      const startKey = parseInt(g2.start_date.slice(0, 4)) * 12 + parseInt(g2.start_date.slice(5, 7));
+      return startKey <= asOfKey;
+    }
+    const extraClasses = (extraEnrollments || []).filter(e => e.student_id === p.id).map(e => (groups || []).find(g2 => g2.id === e.group_id)).filter(hasStarted).reduce((s, g2) => s + (g2.fee || 0), 0);
+    const familyFees = (familyMembers || []).filter(f => f.parent_id === p.id).filter(f => hasStarted((groups || []).find(g2 => g2.id === f.group_id))).reduce((s, f) => s + (f.fee || 0), 0);
+    const extra = extraClasses + familyFees;
+    return computeTotalFee(extra ? [p.fee || 0, extra] : [p.fee || 0]);
   }
   async function save() {
     setSaving(true);
@@ -4741,22 +5069,27 @@ function SessionModal({
       if (!p) continue;
       const due = cashPendingInfo(p);
       if (!due) continue;
-      await sb.from("payments").upsert({
+      const planType = p.payment_type || "monthly";
+      const planMonths = monthsForPlan(planType, due.year, due.month);
+      const realFee = realFeeFor(p, due.year, due.month);
+      const total = planType === "monthly" ? realFee : computePlanTotal(realFee, planType, due.year, due.month);
+      const rowsPay = planMonths.map((m, i) => ({
         student_id: p.id,
-        year: due.year,
-        month: due.month,
+        year: m.year,
+        month: m.month,
         status: "cash_reported",
-        amount: p.fee,
+        amount: i === 0 ? total : 0,
         reported_by: teacherName,
         upload_date: todayISO
-      }, {
+      }));
+      await sb.from("payments").upsert(rowsPay, {
         onConflict: "student_id,year,month"
       });
       await sb.from("cash_ledger").insert({
         type: "ingreso",
-        amount: p.fee,
+        amount: total,
         created_by: teacherName,
-        note: `${p.display_name} — ${MN[due.month]} ${due.year}`
+        note: `${p.display_name} — ${planType === "monthly" ? MN[due.month] + " " + due.year : `${planMonths.length} meses desde ${MN[due.month]} ${due.year}`}`
       });
     }
     setSaving(false);
@@ -4891,7 +5224,7 @@ function SessionModal({
         padding: "4px 8px",
         marginTop: 6
       }
-    }, "💶 Eligió pagar en efectivo — le queda pendiente ", MN[pendingDue.month], ". Si te paga hoy, marca el botón 💶 y dirección lo validará."));
+    }, p?.preferred_payment_method==="efectivo" ? "💶 Eligió pagar en efectivo — " : "💶 ", "Le queda pendiente ", MN[pendingDue.month], ". Si te paga hoy (en efectivo), marca el botón 💶 y dirección lo validará."));
   }), React.createElement("div", {
     className: "row",
     style: {
@@ -5118,7 +5451,12 @@ function TeacherApp({
     }) => setFamilyMembers(data || []));
   }
   useEffect(load, []);
-  const myGroups = groups.filter(g => g.teacher === profile.teacher_name);
+  const [myLastCheck, setMyLastCheck] = useState(null);
+  useEffect(() => {
+    sb.from("profiles").select("last_dashboard_visit").eq("id",profile.id).single().then(({data}) => setMyLastCheck(data?.last_dashboard_visit || null));
+  }, []);
+  const teacherNotifItems = useMemo(() => getTeacherNotifications(profile, groups, profiles, extraEnrollments, familyMembers, myLastCheck), [profile, groups, profiles, extraEnrollments, familyMembers, myLastCheck]);
+  const myGroups = groups.filter(g => g.teacher === profile.teacher_name && g.active !== false);
   const selectedDow = (new Date(selectedDate + "T00:00:00").getDay() + 6) % 7 + 1;
   const todaysOverridesIn = overrides.filter(o => o.session_date === selectedDate && o.substitute_teacher === profile.teacher_name);
   const substituteGroupsToday = groups.filter(g => todaysOverridesIn.some(o => o.group_id === g.id));
@@ -5138,10 +5476,12 @@ function TeacherApp({
   }, React.createElement(Logo, {
     size: 30,
     dark: true
-  }), React.createElement("button", {
+  }), React.createElement("div", {className:"row", style:{gap:10,alignItems:"center"}},
+    React.createElement(NotificationBell, {profile: profile, items: teacherNotifItems}),
+    React.createElement("button", {
     className: "btn-ghost",
     onClick: onLogout
-  }, "Salir")), React.createElement("div", {
+  }, "Salir"))), React.createElement("div", {
     className: "container"
   }, React.createElement("h2", {
     style: {
@@ -5175,27 +5515,7 @@ function TeacherApp({
     return React.createElement("div", {
       key: w.id
     }, "🔔 ", React.createElement("b", null, s?.display_name || "Un alumno/a"), " ha solicitado la baja, efectiva desde ", MN[w.effective_month], " ", w.effective_year, ".");
-  })), React.createElement("div", {
-    className: "tabs",
-    style: {
-      marginBottom: 14
-    }
-  }, React.createElement("div", {
-    className: "tab " + (tab === "mine" ? "active" : ""),
-    onClick: () => setTab("mine")
-  }, "Mis clases por día"), React.createElement("div", {
-    className: "tab " + (tab === "all" ? "active" : ""),
-    onClick: () => setTab("all")
-  }, "Todas mis clases"), React.createElement("div", {
-    className: "tab " + (tab === "hours" ? "active" : ""),
-    onClick: () => setTab("hours")
-  }, "Mis horas"), React.createElement("div", {
-    className: "tab " + (tab === "limpieza" ? "active" : ""),
-    onClick: () => setTab("limpieza")
-  }, "Limpieza"), React.createElement("div", {
-    className: "tab " + (tab === "condiciones" ? "active" : ""),
-    onClick: () => setTab("condiciones")
-  }, "Condiciones")), tab === "mine" && React.createElement(React.Fragment, null, React.createElement("div", {
+  })), tab === "mine" && React.createElement(React.Fragment, null, React.createElement("div", {
     className: "card",
     style: {
       marginBottom: 14,
@@ -5258,11 +5578,22 @@ function TeacherApp({
     profiles: profiles,
     extraEnrollments: extraEnrollments,
     familyMembers: familyMembers
-  }), tab === "limpieza" && React.createElement(CleaningView, {myName: profile.teacher_name}), tab === "condiciones" && React.createElement(ConditionsAndPricingView, {
+  }), tab === "limpieza" && React.createElement(CleaningView, {myName: profile.teacher_name}), tab === "condiciones" && React.createElement(HelpGuide, {role: "teacher"}), tab === "condiciones" && React.createElement(ConditionsAndPricingView, {
     groups: groups
-  })), session && React.createElement(SessionModal, {
+  })), React.createElement(BottomNav, {
+    items: [
+      {key:"mine", icon:"📅", label:"Hoy"},
+      {key:"all", icon:"🗂️", label:"Todas"},
+      {key:"hours", icon:"⏱️", label:"Mis horas"},
+      {key:"limpieza", icon:"🧹", label:"Limpieza"},
+      {key:"condiciones", icon:"📋", label:"Condiciones"}
+    ],
+    active: tab,
+    onSelect: setTab
+  }), session && React.createElement(SessionModal, {
     group: session.group,
     date: session.date,
+    groups: groups,
     profiles: profiles,
     extraEnrollments: extraEnrollments,
     familyMembers: familyMembers,
@@ -5283,7 +5614,9 @@ function TeacherGroupCard({
   familyMembers,
   onTakeAttendance,
   showDay,
-  onEdit
+  onEdit,
+  isInactive,
+  onToggleActive
 }) {
   const [open, setOpen] = useState(false);
   const [notes, setNotes] = useState([]);
@@ -5351,10 +5684,27 @@ function TeacherGroupCard({
     className: "card",
     style: {
       marginBottom: 10,
-      borderLeft: `4px solid ${classColor(g.name)}`
+      borderLeft: `4px solid ${isInactive ? "#ccc" : classColor(g.name)}`,
+      opacity: isInactive ? 0.6 : 1
     }
-  }, substitutionNote && React.createElement("div", {
-    style: {background:"#FFF3D6",border:"1px solid var(--mostaza)",borderRadius:8,padding:"4px 8px",fontSize:12,color:"#6a4b00",marginBottom:8,fontWeight:700}
+  }, isInactive && React.createElement("div", {
+    style: {
+      fontSize: 12,
+      fontWeight: 700,
+      color: "var(--gris)",
+      marginBottom: 6
+    }
+  }, "🚫 CANCELADA — no aparece en horarios ni en el pago a profesoras"), substitutionNote && React.createElement("div", {
+    style: {
+      background: "#FFF3D6",
+      border: "1px solid var(--mostaza)",
+      borderRadius: 8,
+      padding: "4px 8px",
+      fontSize: 12,
+      color: "#6a4b00",
+      marginBottom: 8,
+      fontWeight: 700
+    }
   }, "🔄 ", substitutionNote), React.createElement("div", {
     style: {
       display: "flex",
@@ -5377,7 +5727,13 @@ function TeacherGroupCard({
   }, "Pasar lista"), onEdit && React.createElement("button", {
     className: "btn-ghost",
     onClick: onEdit
-  }, "Editar"))), open && React.createElement("div", {
+  }, "Editar"), onToggleActive && React.createElement("button", {
+    className: "btn-ghost",
+    style: {
+      color: isInactive ? "var(--verde)" : "var(--rojo)"
+    },
+    onClick: onToggleActive
+  }, isInactive ? "Reactivar" : "Cancelar clase"))), open && React.createElement("div", {
     style: {
       marginTop: 12,
       borderTop: "1px solid #EEF2F8",
@@ -6568,6 +6924,158 @@ function CEODashboard({
   })));
 }
 
+function RecoveryManagerForCEO({
+  studentId,
+  studentName,
+  groups
+}) {
+  const [open, setOpen] = useState(false);
+  const [creditMonth, setCreditMonth] = useState(CM);
+  const [creditYear, setCreditYear] = useState(CY);
+  const [savingCredit, setSavingCredit] = useState(false);
+  const [bookGroupId, setBookGroupId] = useState("");
+  const [bookDate, setBookDate] = useState(todayISO);
+  const [savingBooking, setSavingBooking] = useState(false);
+  const [msg, setMsg] = useState("");
+  async function grantCredit() {
+    setSavingCredit(true);
+    setMsg("");
+    const {
+      error
+    } = await sb.from("manual_recovery_credits").insert({
+      student_id: studentId,
+      year: creditYear,
+      month: creditMonth,
+      amount: 1,
+      granted_by: "dirección"
+    });
+    setSavingCredit(false);
+    setMsg(error ? "❌ " + error.message : `✅ Crédito de recuperación añadido para ${MN[creditMonth]} ${creditYear}.`);
+  }
+  async function bookForStudent() {
+    if (!bookGroupId) {
+      setMsg("Elige una clase.");
+      return;
+    }
+    setSavingBooking(true);
+    setMsg("");
+    const {
+      error
+    } = await sb.from("session_bookings").insert({
+      student_id: studentId,
+      group_id: parseInt(bookGroupId),
+      session_date: bookDate,
+      booking_type: "recovery"
+    });
+    setSavingBooking(false);
+    setMsg(error ? "❌ " + error.message : `✅ Recuperación reservada para ${studentName} el ${bookDate}.`);
+  }
+  return React.createElement("div", {
+    className: "card",
+    style: {
+      marginTop: 14
+    }
+  }, React.createElement("div", {
+    style: {
+      display: "flex",
+      justifyContent: "space-between",
+      alignItems: "center",
+      cursor: "pointer"
+    },
+    onClick: () => setOpen(o => !o)
+  }, React.createElement("h4", {
+    style: {
+      margin: 0
+    }
+  }, "🔁 Recuperaciones"), React.createElement("button", {
+    className: "btn-ghost",
+    style: {
+      padding: "4px 10px",
+      fontSize: 12
+    }
+  }, open ? "Cerrar" : "Gestionar")), open && React.createElement("div", {
+    style: {
+      marginTop: 12
+    }
+  }, React.createElement("div", {
+    style: {
+      marginBottom: 14
+    }
+  }, React.createElement("b", {
+    style: {
+      fontSize: 13
+    }
+  }, "Dar un crédito de recuperación extra"), React.createElement("div", {
+    className: "row",
+    style: {
+      marginTop: 6,
+      alignItems: "flex-end"
+    }
+  }, React.createElement("div", {
+    className: "col"
+  }, React.createElement(Field, {
+    label: "Mes"
+  }, React.createElement("select", {
+    value: creditMonth,
+    onChange: e => setCreditMonth(parseInt(e.target.value))
+  }, MN.slice(1).map((m, i) => React.createElement("option", {
+    key: m,
+    value: i + 1
+  }, m))))), React.createElement("div", {
+    className: "col"
+  }, React.createElement(Field, {
+    label: "Año"
+  }, React.createElement("select", {
+    value: creditYear,
+    onChange: e => setCreditYear(parseInt(e.target.value))
+  }, [CY - 1, CY, CY + 1].map(y => React.createElement("option", {
+    key: y,
+    value: y
+  }, y))))), React.createElement("button", {
+    className: "btn-secondary",
+    disabled: savingCredit,
+    onClick: grantCredit
+  }, savingCredit ? "Guardando…" : "+1 crédito"))), React.createElement("div", null, React.createElement("b", {
+    style: {
+      fontSize: 13
+    }
+  }, "Reservar una recuperación en su nombre"), React.createElement("div", {
+    className: "row",
+    style: {
+      marginTop: 6,
+      alignItems: "flex-end"
+    }
+  }, React.createElement("div", {
+    className: "col"
+  }, React.createElement(Field, {
+    label: "Clase"
+  }, React.createElement("select", {
+    value: bookGroupId,
+    onChange: e => setBookGroupId(e.target.value)
+  }, React.createElement("option", {
+    value: ""
+  }, "Elige…"), groups.map(g => React.createElement("option", {
+    key: g.id,
+    value: g.id
+  }, DNF[g.day - 1], " ", g.time_start, " · ", g.name, " · ", g.teacher))))), React.createElement("div", {
+    className: "col"
+  }, React.createElement(Field, {
+    label: "Fecha"
+  }, React.createElement("input", {
+    type: "date",
+    value: bookDate,
+    onChange: e => setBookDate(e.target.value)
+  }))), React.createElement("button", {
+    className: "btn-secondary",
+    disabled: savingBooking,
+    onClick: bookForStudent
+  }, savingBooking ? "Guardando…" : "Reservar"))), msg && React.createElement("p", {
+    style: {
+      fontSize: 13,
+      marginTop: 8
+    }
+  }, msg)));
+}
 function StudentEditModal({
   p,
   onClose,
@@ -6867,7 +7375,7 @@ function StudentEditModal({
       fontSize: 12,
       marginTop: 6
     }
-  }, groupMsg)), React.createElement("div", {
+  }, groupMsg)), React.createElement(RecoveryManagerForCEO, {studentId: p.id, studentName: p.display_name, groups: allGroups||[]}), React.createElement("div", {
     style: {
       background: "var(--fondo)",
       borderRadius: 10,
@@ -7171,6 +7679,12 @@ function GroupsView({
     setStudentsText((g.students || []).join(", "));
     setEditing(g);
   }
+  async function toggleActive(g){
+    const goingInactive = g.active !== false;
+    if(goingInactive && !window.confirm(`¿Cancelar "${g.name}" (${DNF[g.day-1]} ${g.time_start})? Dejará de aparecer como clase activa (horario, reservas, pago a profesoras) pero su historial se conserva. Si tiene alumnos, recuerda reubicarlos primero.`)) return;
+    await sb.from("groups").update({active: !goingInactive}).eq("id", g.id);
+    reload();
+  }
   return React.createElement("div", null, React.createElement("button", {
     className: "btn-primary",
     style: {
@@ -7197,7 +7711,7 @@ function GroupsView({
       color: "var(--azul-oscuro)"
     }
   }, "Horario semanal"), React.createElement(WeeklyTimetable, {
-    groups: groups,
+    groups: groups.filter(g => g.active !== false),
     profiles: profiles,
     onSelect: openEdit
   })), DNF.map((dn, i) => React.createElement("div", {
@@ -7215,7 +7729,9 @@ function GroupsView({
     profiles: profiles,
     extraEnrollments: extraEnrollments,
     familyMembers: familyMembers,
-    onEdit: () => openEdit(g)
+    onEdit: () => openEdit(g),
+    isInactive: g.active === false,
+    onToggleActive: () => toggleActive(g)
   })))), editing && React.createElement("div", {
     className: "modal-bg",
     onClick: () => setEditing(null)
@@ -8037,7 +8553,7 @@ function computeTeacherPay(year, month, {
 function computeRevenueShareForTeacher(teacherName, year, month, {groups, profiles, extraEnrollments, familyMembers}) {
   // Para clases con modelo de reparto de ingresos (ej: Aerografía, Manos Creativas, Arte Textil):
   // la profesora cobra un % de los ingresos reales de esa clase, no por horas dadas.
-  const myGroups = groups.filter(g => g.teacher === teacherName && g.pay_model === "revenue_share");
+  const myGroups = groups.filter(g => g.teacher === teacherName && g.pay_model === "revenue_share" && g.active !== false);
   let total = 0;
   const details = [];
   const askedKey = year*12 + month;
@@ -8078,7 +8594,7 @@ function estimateTeacherPay(teacherName, year, month, {
   rates,
   tiers
 }) {
-  const myGroups = groups.filter(g => g.teacher === teacherName && g.pay_model !== "revenue_share");
+  const myGroups = groups.filter(g => g.teacher === teacherName && g.pay_model !== "revenue_share" && g.active !== false);
   const rate = rates.find(r => r.teacher_name === teacherName)?.rate_per_hour || 0;
   let sessions = 0,
     hours = 0,
@@ -10233,8 +10749,102 @@ function WeeklyDetailView({
     }));
   })));
 }
+function KeyCodeCard({
+  isCEO
+}) {
+  const [row, setRow] = useState(null);
+  const [editing, setEditing] = useState(false);
+  const [newCode, setNewCode] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState("");
+  function load() {
+    sb.from("key_cabinet_code").select("*").order("updated_at", {
+      ascending: false
+    }).limit(1).maybeSingle().then(({
+      data
+    }) => setRow(data || null));
+  }
+  useEffect(load, []);
+  async function save() {
+    if (!/^\d{4}$/.test(newCode)) {
+      setMsg("Tiene que ser un número de 4 cifras.");
+      return;
+    }
+    setSaving(true);
+    setMsg("");
+    const {
+      error
+    } = await sb.from("key_cabinet_code").insert({
+      code: newCode,
+      updated_by: "dirección"
+    });
+    setSaving(false);
+    if (error) {
+      setMsg("❌ " + error.message);
+      return;
+    }
+    setEditing(false);
+    setNewCode("");
+    load();
+  }
+  return React.createElement("div", {
+    className: "card",
+    style: {
+      marginBottom: 14,
+      borderLeft: "4px solid var(--azul-oscuro)"
+    }
+  }, React.createElement("h4", {
+    style: {
+      marginTop: 0
+    }
+  }, "🔑 Código del cajetín de llaves"), !editing ? React.createElement("div", null, React.createElement("div", {
+    style: {
+      fontSize: 32,
+      fontWeight: 800,
+      letterSpacing: 4,
+      color: "var(--azul-oscuro)"
+    }
+  }, row?.code || "----"), row?.updated_at && React.createElement("p", {
+    style: {
+      fontSize: 11,
+      color: "var(--gris)",
+      marginTop: 4
+    }
+  }, "Actualizado el ", new Date(row.updated_at).toLocaleDateString("es-ES")), isCEO && React.createElement("button", {
+    className: "btn-ghost",
+    style: {
+      marginTop: 6
+    },
+    onClick: () => setEditing(true)
+  }, "Cambiar código")) : React.createElement("div", null, React.createElement(Field, {
+    label: "Nuevo código (4 números)"
+  }, React.createElement("input", {
+    value: newCode,
+    onChange: e => setNewCode(e.target.value),
+    maxLength: 4,
+    placeholder: "Ej: 4821"
+  })), msg && React.createElement("p", {
+    style: {
+      fontSize: 13,
+      color: "var(--rojo)"
+    }
+  }, msg), React.createElement("div", {
+    className: "row"
+  }, React.createElement("button", {
+    className: "btn-ghost",
+    onClick: () => {
+      setEditing(false);
+      setMsg("");
+    }
+  }, "Cancelar"), React.createElement("button", {
+    className: "btn-primary",
+    disabled: saving,
+    onClick: save
+  }, saving ? "Guardando…" : "Guardar"))));
+}
 function CleaningView({
-  myName
+  myName,
+  isCEO
 }) {
   const [requests, setRequests] = useState([]);
   const [adding, setAdding] = useState(false);
@@ -10277,7 +10887,7 @@ function CleaningView({
     }).eq("id", id);
     load();
   }
-  return React.createElement("div", null, React.createElement("div", {
+  return React.createElement("div", null, React.createElement(KeyCodeCard, {isCEO: !!isCEO}), React.createElement("div", {
     className: "card",
     style: {
       marginBottom: 14
@@ -10412,6 +11022,22 @@ function CleaningView({
     onClick: () => reopen(r.id)
   }, "Reabrir"))))));
 }
+function getCEONotifications(groups, profiles, extraEnrollments, familyMembers, payments){
+  const items = [];
+  const students = profiles.filter(p=>p.role==="student");
+  const enrolled = students.filter(s=>s.group_id || s.enrollment_mode==="flex");
+  const incomplete = students.length - enrolled.length;
+  if(incomplete>0) items.push({text:`${incomplete} inscripción${incomplete!==1?"es":""} sin completar (sin elegir clase)`, urgent:true});
+  const lowOcc = groups.filter(g=>effectiveRoster(g,profiles,extraEnrollments,familyMembers).length<=2);
+  if(lowOcc.length>0) items.push({text:`${lowOcc.length} clase${lowOcc.length!==1?"s":""} con muy pocos alumnos`, urgent:true});
+  const uploaded = payments.filter(p=>p.status==="uploaded").length;
+  if(uploaded>0) items.push({text:`${uploaded} justificante${uploaded!==1?"s":""} pendiente${uploaded!==1?"s":""} de validar`, urgent:false});
+  const whatsapp = payments.filter(p=>p.status==="whatsapp").length;
+  if(whatsapp>0) items.push({text:`${whatsapp} aviso${whatsapp!==1?"s":""} por WhatsApp pendiente${whatsapp!==1?"s":""} de validar`, urgent:false});
+  const cash = payments.filter(p=>p.status==="cash_reported").length;
+  if(cash>0) items.push({text:`${cash} pago${cash!==1?"s":""} en efectivo reportado${cash!==1?"s":""} por profesoras, pendiente${cash!==1?"s":""} de validar`, urgent:false});
+  return items;
+}
 function CEOApp({
   profile,
   onLogout
@@ -10512,43 +11138,18 @@ function CEOApp({
   }, React.createElement(Logo, {
     size: 30,
     dark: true
-  }), React.createElement("button", {
+  }), React.createElement("div", {className:"row", style:{gap:10,alignItems:"center"}},
+    React.createElement(NotificationBell, {profile: profile, items: getCEONotifications(groups, profiles, extraEnrollments, familyMembers, payments)}),
+    React.createElement("button", {
     className: "btn-ghost",
     onClick: onLogout
-  }, "Salir")), React.createElement("div", {
+  }, "Salir"))), React.createElement("div", {
     className: "container"
-  }, React.createElement("div", {
-    className: "tabs",
-    style: {
-      marginBottom: activeGroup.subtabs ? 4 : 16
-    }
-  }, MENU.map(g => React.createElement("div", {
-    key: g.key,
-    className: "tab " + (activeGroup.key === g.key ? "active" : ""),
-    onClick: () => selectGroup(g),
-    style: {
-      display: "flex",
-      alignItems: "center",
-      gap: 5
-    }
-  }, React.createElement("span", {
-    style: {
-      fontSize: 15,
-      fontWeight: 400
-    }
-  }, g.icon), g.label))), activeGroup.subtabs && React.createElement("div", {
-    className: "tabs",
-    style: {
-      marginBottom: 16,
-      paddingLeft: 4
-    }
+  }, activeGroup.subtabs && React.createElement("div", {
+    className: "subnav"
   }, activeGroup.subtabs.map(([k, l]) => React.createElement("div", {
     key: k,
-    className: "tab " + (tab === k ? "active" : ""),
-    style: {
-      fontSize: 13,
-      padding: "6px 12px"
-    },
+    className: "subnav-item" + (tab === k ? " active" : ""),
     onClick: () => selectSubtab(activeGroup.key, k)
   }, l))), tab === "dashboard" && React.createElement(CEODashboard, {
     groups: groups,
@@ -10604,15 +11205,19 @@ function CEOApp({
     profiles: profiles,
     extraEnrollments: extraEnrollments,
     familyMembers: familyMembers
-  }), tab === "workshops" && React.createElement(WorkshopsView, null), tab === "vouchers" && React.createElement(VouchersView, null), tab === "tienda" && React.createElement(MaterialsShopCEOView, null), tab === "limpieza" && React.createElement(CleaningView, {myName: "Dirección"}), tab === "expenses" && React.createElement(ExpensesView, {
+  }), tab === "workshops" && React.createElement(WorkshopsView, null), tab === "vouchers" && React.createElement(VouchersView, null), tab === "tienda" && React.createElement(MaterialsShopCEOView, null), tab === "limpieza" && React.createElement(CleaningView, {myName: "Dirección", isCEO: true}), tab === "expenses" && React.createElement(ExpensesView, {
     expenses: expenses,
     reload: load
   }), tab === "historico" && React.createElement(HistoricalFinanceView, {
     expenses: expenses,
     payments: payments
-  }), tab === "condiciones" && React.createElement(ConditionsAndPricingView, {
+  }), tab === "condiciones" && React.createElement(HelpGuide, {role: "ceo"}), tab === "condiciones" && React.createElement(ConditionsAndPricingView, {
     groups: groups
-  })));
+  })), React.createElement(BottomNav, {
+    items: MENU,
+    active: activeGroup.key,
+    onSelect: (key) => selectGroup(MENU.find(m => m.key === key))
+  }));
 }
 ReactDOM.createRoot(document.getElementById("root")).render(React.createElement(App, null));
 </script>
