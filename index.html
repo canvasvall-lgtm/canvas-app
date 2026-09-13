@@ -2184,20 +2184,28 @@ function App() {
   const [recovering, setRecovering] = useState(false);
   const [settingsLoaded, setSettingsLoaded] = useState(false);
   useEffect(() => {
-    sb.from("app_settings").select("*").then(({data,error}) => {
-      if(!error && data){
-        const s = {};
-        data.forEach(row => s[row.key] = row.value);
-        if(s.standard_enrollment_fee) STANDARD_ENROLLMENT_FEE = parseFloat(s.standard_enrollment_fee);
-        if(s.course_start){ COURSE_START = s.course_start; COURSE_START_YEAR = parseInt(s.course_start.slice(0,4)); }
-        if(s.course_end) COURSE_END = s.course_end;
-        if(s.next_cleaning_date) NEXT_CLEANING_DATE = s.next_cleaning_date;
-        if(s.cleaning_interval_days) CLEANING_INTERVAL_DAYS = parseInt(s.cleaning_interval_days);
-        if(s.iban) IBAN = s.iban;
-        if(s.academy_whatsapp) ACADEMY_WHATSAPP = s.academy_whatsapp;
-      }
-      setSettingsLoaded(true);
-    });
+    let done = false;
+    function finish(){ if(!done){ done = true; setSettingsLoaded(true); } }
+    try {
+      sb.from("app_settings").select("*").then(({data,error}) => {
+        try {
+          if(!error && data){
+            const s = {};
+            data.forEach(row => s[row.key] = row.value);
+            if(s.standard_enrollment_fee) STANDARD_ENROLLMENT_FEE = parseFloat(s.standard_enrollment_fee);
+            if(s.course_start){ COURSE_START = s.course_start; COURSE_START_YEAR = parseInt(s.course_start.slice(0,4)); }
+            if(s.course_end) COURSE_END = s.course_end;
+            if(s.next_cleaning_date) NEXT_CLEANING_DATE = s.next_cleaning_date;
+            if(s.cleaning_interval_days) CLEANING_INTERVAL_DAYS = parseInt(s.cleaning_interval_days);
+            if(s.iban) IBAN = s.iban;
+            if(s.academy_whatsapp) ACADEMY_WHATSAPP = s.academy_whatsapp;
+          }
+        } catch(e) {}
+        finish();
+      }).catch(()=>finish());
+    } catch(e) { finish(); }
+    // Red de seguridad: si por lo que sea la consulta no responde, la app arranca igualmente a los 4 segundos
+    setTimeout(finish, 4000);
   }, []);
   useEffect(() => {
     sb.auth.getSession().then(({
@@ -12026,3 +12034,4 @@ ReactDOM.createRoot(document.getElementById("root")).render(React.createElement(
 </script>
 </body>
 </html>
+#
