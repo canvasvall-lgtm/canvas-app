@@ -31,9 +31,9 @@
   .card{background:#fff;border-radius:16px;padding:18px;box-shadow:0 2px 12px rgba(35,80,160,.08);}
   .container{max-width:1100px;margin:0 auto;padding:16px;padding-bottom:84px;}
   .bottomnav{position:fixed;bottom:0;left:0;right:0;background:#fff;border-top:1px solid #E2E8F0;display:flex;justify-content:space-around;align-items:stretch;padding:4px 2px calc(4px + env(safe-area-inset-bottom,0px));z-index:150;box-shadow:0 -2px 10px rgba(0,0,0,0.06);}
-  .bottomnav-item{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;padding:6px 2px;background:none;border:none;cursor:pointer;color:var(--gris);min-width:0;}
+  .bottomnav-item{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;padding:8px 2px;background:none;border:none;cursor:pointer;color:var(--gris);min-width:0;}
   .bottomnav-item.active{color:var(--azul-oscuro);}
-  .bottomnav-icon{font-size:19px;line-height:1;}
+  .bottomnav-icon{font-size:26px;line-height:1;}
   .bottomnav-label{font-size:10px;line-height:1.1;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;}
   .subnav{display:flex;gap:6px;overflow-x:auto;padding-bottom:10px;margin-bottom:14px;-webkit-overflow-scrolling:touch;}
   .subnav-item{flex-shrink:0;padding:6px 14px;border-radius:20px;background:var(--fondo);color:var(--azul-oscuro);font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap;}
@@ -4250,7 +4250,7 @@ function TeacherHelp() {
     title: "⏱️ Mis horas"
   }, React.createElement("p", null, "Aquí ves cuánto vas a cobrar. La mayoría de clases se calculan por horas dadas (según has pasado lista); algunas clases concretas (como Aerografía) se pagan por reparto de ingresos — un % de lo que paguen los alumnos de esa clase, no por hora. Si es tu caso, lo verás desglosado aparte, claramente explicado."), React.createElement("p", null, "El detalle día a día te muestra exactamente qué sesiones cuentan y cuánto suma cada una.")), React.createElement(HelpSection, {
     title: "🧹 Limpieza"
-  }, React.createElement("p", null, "Aquí ves cuándo toca la próxima limpieza general, y el código del cajetín de llaves (por si necesitas las llaves auxiliares). Si detectas que alguna zona necesita más atención (ventanas, suelos, baños...), avísalo aquí — dirección se lo comunica a la persona de la limpieza.")), React.createElement(HelpSection, {
+  }, React.createElement("p", null, "Aquí ves cuándo toca la próxima limpieza general. Si detectas que alguna zona necesita más atención (ventanas, suelos, baños...), avísalo aquí — dirección se lo comunica a la persona de la limpieza. El código del cajetín de llaves tiene su propio apartado, aquí al lado.")), React.createElement(HelpSection, {
     title: "🔔 La campanita"
   }, React.createElement("p", null, "Te avisa si algún alumno nuevo se ha apuntado a tus clases, si alguna se te ha quedado con pocos alumnos, o si se te ha completado un grupo.")));
 }
@@ -5578,7 +5578,7 @@ function TeacherApp({
     profiles: profiles,
     extraEnrollments: extraEnrollments,
     familyMembers: familyMembers
-  }), tab === "limpieza" && React.createElement(CleaningView, {myName: profile.teacher_name}), tab === "condiciones" && React.createElement(HelpGuide, {role: "teacher"}), tab === "condiciones" && React.createElement(ConditionsAndPricingView, {
+  }), tab === "limpieza" && React.createElement(CleaningView, {myName: profile.teacher_name}), tab === "llaves" && React.createElement(KeyCodeCard, {isCEO: false}), tab === "condiciones" && React.createElement(HelpGuide, {role: "teacher"}), tab === "condiciones" && React.createElement(ConditionsAndPricingView, {
     groups: groups
   })), React.createElement(BottomNav, {
     items: [
@@ -5586,6 +5586,7 @@ function TeacherApp({
       {key:"all", icon:"🗂️", label:"Todas"},
       {key:"hours", icon:"⏱️", label:"Mis horas"},
       {key:"limpieza", icon:"🧹", label:"Limpieza"},
+      {key:"llaves", icon:"🔑", label:"Llaves"},
       {key:"condiciones", icon:"📋", label:"Condiciones"}
     ],
     active: tab,
@@ -6469,36 +6470,38 @@ function CEODashboard({
       ...enrolledStudents.map(s => ({created_at: s.created_at})),
       ...(familyMembers||[]).map(f => ({created_at: f.created_at}))
     ];
-    const before = allPeople.filter(s => {
-      if (!s.created_at) return false;
-      const cd = new Date(s.created_at);
-      const key = cd.getFullYear() * 12 + (cd.getMonth() + 1);
-      const firstKey = STUDENT_CHART_MONTHS[0].year * 12 + STUDENT_CHART_MONTHS[0].month;
-      return key < firstKey;
-    }).length;
-    // Bajas ya efectivas antes del primer mes del gráfico (solo cuentas propias tienen este flujo formal)
-    const withdrawalsBefore = (allWithdrawals||[]).filter(w => {
-      const key = w.effective_year*12 + w.effective_month;
-      const firstKey = STUDENT_CHART_MONTHS[0].year * 12 + STUDENT_CHART_MONTHS[0].month;
-      return key < firstKey;
-    }).length;
-    let cumulative = before - withdrawalsBefore;
-    return STUDENT_CHART_MONTHS.map(m => {
+    // El total de HOY es el dato seguro (el mismo que el KPI de arriba) — todo el histórico se reconstruye
+    // hacia atrás desde aquí, para que el gráfico nunca pueda descuadrarse con ese número.
+    const currentTotal = enrolledStudents.length + (familyMembers||[]).length;
+    const withMovement = STUDENT_CHART_MONTHS.map(m => {
       const nuevos = allPeople.filter(s => {
         if (!s.created_at) return false;
         const cd = new Date(s.created_at);
         return cd.getFullYear() === m.year && cd.getMonth() + 1 === m.month;
       }).length;
-      // Bajas cuyo mes efectivo es este mes: se restan del acumulado a partir de aquí
       const bajas = (allWithdrawals||[]).filter(w => w.effective_year===m.year && w.effective_month===m.month).length;
-      cumulative += nuevos - bajas;
-      return {
-        label: MN[m.month].slice(0, 3),
-        nuevos,
-        bajas,
-        activos: Math.max(0, cumulative)
-      };
+      return {...m, nuevos, bajas};
     });
+    const nowKey = CY*12+CM;
+    let idxNow = withMovement.findIndex(m => m.year*12+m.month === nowKey);
+    if(idxNow === -1) idxNow = todayISO < COURSE_START ? 0 : withMovement.length-1;
+    const activos = new Array(withMovement.length);
+    activos[idxNow] = currentTotal;
+    let running = currentTotal;
+    for(let i=idxNow-1;i>=0;i--){
+      // Deshacemos lo que pasó en el mes siguiente para saber cómo estábamos a final de este mes
+      running = running - withMovement[i+1].nuevos + withMovement[i+1].bajas;
+      activos[i] = Math.max(0, running);
+    }
+    for(let i=idxNow+1;i<withMovement.length;i++){
+      activos[i] = currentTotal; // meses futuros: aún no hay datos reales, mantenemos el total de hoy
+    }
+    return withMovement.map((m,i) => ({
+      label: MN[m.month].slice(0, 3),
+      nuevos: m.nuevos,
+      bajas: m.bajas,
+      activos: activos[i]
+    }));
   }, [enrolledStudents, familyMembers, allWithdrawals]);
   const courseChartMonths = FISCAL_MONTHS.map(m => MN[m.month].slice(0, 3) + " " + String(m.year).slice(2));
   const incomeByMonth = useMemo(() => {
@@ -10887,7 +10890,7 @@ function CleaningView({
     }).eq("id", id);
     load();
   }
-  return React.createElement("div", null, React.createElement(KeyCodeCard, {isCEO: !!isCEO}), React.createElement("div", {
+  return React.createElement("div", null, React.createElement("div", {
     className: "card",
     style: {
       marginBottom: 14
@@ -11106,7 +11109,7 @@ function CEOApp({
     key: "otros",
     icon: "◆",
     label: "Otros",
-    subtabs: [["workshops", "Talleres"], ["vouchers", "Bonos"], ["tienda", "Tienda"], ["limpieza", "Limpieza"]]
+    subtabs: [["workshops", "Talleres"], ["vouchers", "Bonos"], ["tienda", "Tienda"], ["limpieza", "Limpieza"], ["llaves", "🔑 Llaves"]]
   }, {
     key: "condiciones",
     icon: "≡",
@@ -11205,7 +11208,7 @@ function CEOApp({
     profiles: profiles,
     extraEnrollments: extraEnrollments,
     familyMembers: familyMembers
-  }), tab === "workshops" && React.createElement(WorkshopsView, null), tab === "vouchers" && React.createElement(VouchersView, null), tab === "tienda" && React.createElement(MaterialsShopCEOView, null), tab === "limpieza" && React.createElement(CleaningView, {myName: "Dirección", isCEO: true}), tab === "expenses" && React.createElement(ExpensesView, {
+  }), tab === "workshops" && React.createElement(WorkshopsView, null), tab === "vouchers" && React.createElement(VouchersView, null), tab === "tienda" && React.createElement(MaterialsShopCEOView, null), tab === "limpieza" && React.createElement(CleaningView, {myName: "Dirección", isCEO: true}), tab === "llaves" && React.createElement(KeyCodeCard, {isCEO: true}), tab === "expenses" && React.createElement(ExpensesView, {
     expenses: expenses,
     reload: load
   }), tab === "historico" && React.createElement(HistoricalFinanceView, {
