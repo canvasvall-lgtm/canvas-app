@@ -170,11 +170,11 @@ function classColor(name) {
 }
 const DNF = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes"];
 const MN = ["", "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
-const STANDARD_ENROLLMENT_FEE = 10;
-const COURSE_START = "2026-09-09";
-const COURSE_END = "2027-06-30";
-const NEXT_CLEANING_DATE = "2026-09-21";
-const CLEANING_INTERVAL_DAYS = 14;
+let STANDARD_ENROLLMENT_FEE = 10;
+let COURSE_START = "2026-09-09";
+let COURSE_END = "2027-06-30";
+let NEXT_CLEANING_DATE = "2026-09-21";
+let CLEANING_INTERVAL_DAYS = 14;
 const CLEANING_AREAS = ["Ventanas","Zona exterior","Sala clases","Sala talleres","Baño clases","Baño talleres","Suelos","Mesas","Sillas"];
 function nextCleaningDates(count){
   const dates = [];
@@ -228,7 +228,7 @@ const SCHOOL_CLOSURES = [{
   end: "2027-05-13",
   label: "San Pedro Regalado (festivo local de Valladolid)"
 }];
-const COURSE_START_YEAR = parseInt(COURSE_START.slice(0, 4));
+let COURSE_START_YEAR = parseInt(COURSE_START.slice(0, 4));
 const SCHOOL_MONTHS = monthsCoveredFrom(COURSE_START_YEAR, 9, 10);
 const TRIMESTRE_BLOCKS = [SCHOOL_MONTHS.slice(0, 4), SCHOOL_MONTHS.slice(4, 7), SCHOOL_MONTHS.slice(7, 10)];
 function monthsForPlan(planType, year, month) {
@@ -293,8 +293,8 @@ function nextClosure(fromDate) {
   return upcoming[0] || null;
 }
 const CONDITIONS_TEXT = [["Matrícula", "Se paga una única vez al darte de alta y no es reembolsable."], ["Cuota mensual", "Se paga por adelantado dentro de los primeros días de cada mes. No es reembolsable."], ["Recuperar clases", "Si no puedes asistir a tu clase, debes darte de baja de esa sesión concreta desde la app con al menos 5 horas de antelación — así tendrás derecho a recuperarla. Para recuperarla (o para canjear un bono regalo), puedes inscribirte en un hueco libre de otra clase hasta 3 horas antes de que empiece esa sesión. Solo se puede recuperar 1 clase al mes."], ["Darte de baja de la academia", "Puedes solicitar la baja cuando quieras desde tu perfil, pero siempre será efectiva a partir del mes siguiente — no se puede dar de baja el mes en curso, que se sigue cobrando igualmente."], ["Puntualidad", "Intenta llegar a tu hora — las entradas tardías interrumpen la clase de tus compañeros."], ["Materiales", "La academia proporciona lo básico (folios, lápices, pinturas...). El material específico de tu técnica corre por tu cuenta."], ["Cuidado del material", "Cualquier daño por mal uso de los materiales o el equipo de la academia será responsabilidad del alumno o su familia."], ["Tus obras", "Al terminar cada proyecto, puedes llevarte tus trabajos a casa."], ["Exposición de fin de curso", "Organizamos una exposición donde podéis mostrar vuestro trabajo. Participar es totalmente voluntario."], ["Comunicación", "Os avisaremos de horarios, eventos y novedades por WhatsApp, email o teléfono."], ["Aerografía — aerógrafo", "El precio de la clase lo incluye todo. La academia deja un aerógrafo durante el primer mes o mes y medio para que puedas conocer la herramienta; pasado ese periodo, si no traes el tuyo propio (que debe ser apto para uso en academia), tiene un alquiler de 10€/mes. Mientras tanto, la profesora te asesora para que, si quieres comprarte uno, elijas el que mejor se adapte al uso que le vayas a dar."], ["Aerografía — baja", "Si vas a dejar de venir a aerografía, avisa con al menos 15 días de antelación."], ["Aerografía — ropa", "Es pintura, y nos podemos manchar — no vengas con tu ropa favorita."]];
-const IBAN = "ES48 0182 1605 5802 0164 4508";
-const ACADEMY_WHATSAPP = "34628458791";
+let IBAN = "ES48 0182 1605 5802 0164 4508";
+let ACADEMY_WHATSAPP = "34628458791";
 const FLEX_MONTHLY_FEE = 60;
 const FLEX_MONTHLY_SESSIONS = 4;
 const BONO_PRICES = {
@@ -1435,6 +1435,7 @@ function RegisterForm({
     guardian_email: "",
     payment_type: "monthly",
     preferred_payment_method: "transferencia",
+    how_found_us: "",
     privacy_consent: false,
     enrollment_mode: "fixed",
     conditions_accepted: false,
@@ -1580,6 +1581,7 @@ function RegisterForm({
       guardian_phone: f.guardian_phone,
       guardian_email: f.guardian_email,
       preferred_payment_method: f.preferred_payment_method,
+      how_found_us: f.how_found_us || null,
       enrollment_fee: enrollmentFee,
       enrollment_fee_paid: false,
       enrollment_start_year: startY,
@@ -1953,6 +1955,17 @@ function RegisterForm({
   }, "Transferencia"), React.createElement("option", {
     value: "efectivo"
   }, "Efectivo"))), React.createElement(Field, {
+    label: "¿Cómo nos has conocido? (opcional)"
+  }, React.createElement("select", {
+    value: f.how_found_us,
+    onChange: e => upd("how_found_us", e.target.value)
+  }, React.createElement("option", {value: ""}, "Prefiero no decirlo"),
+     React.createElement("option", {value: "instagram"}, "Instagram"),
+     React.createElement("option", {value: "facebook"}, "Facebook"),
+     React.createElement("option", {value: "google"}, "Buscando en Google"),
+     React.createElement("option", {value: "recomendacion"}, "Recomendación de alguien"),
+     React.createElement("option", {value: "calle"}, "Pasando por la calle / cartel"),
+     React.createElement("option", {value: "otro"}, "Otro"))), React.createElement(Field, {
     label: "¿Cómo prefieres pagar la cuota?"
   }, React.createElement("select", {
     value: f.payment_type,
@@ -2169,6 +2182,23 @@ function App() {
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
   const [recovering, setRecovering] = useState(false);
+  const [settingsLoaded, setSettingsLoaded] = useState(false);
+  useEffect(() => {
+    sb.from("app_settings").select("*").then(({data,error}) => {
+      if(!error && data){
+        const s = {};
+        data.forEach(row => s[row.key] = row.value);
+        if(s.standard_enrollment_fee) STANDARD_ENROLLMENT_FEE = parseFloat(s.standard_enrollment_fee);
+        if(s.course_start){ COURSE_START = s.course_start; COURSE_START_YEAR = parseInt(s.course_start.slice(0,4)); }
+        if(s.course_end) COURSE_END = s.course_end;
+        if(s.next_cleaning_date) NEXT_CLEANING_DATE = s.next_cleaning_date;
+        if(s.cleaning_interval_days) CLEANING_INTERVAL_DAYS = parseInt(s.cleaning_interval_days);
+        if(s.iban) IBAN = s.iban;
+        if(s.academy_whatsapp) ACADEMY_WHATSAPP = s.academy_whatsapp;
+      }
+      setSettingsLoaded(true);
+    });
+  }, []);
   useEffect(() => {
     sb.auth.getSession().then(({
       data
@@ -2205,7 +2235,7 @@ function App() {
   }, [session]);
   const logout = () => sb.auth.signOut();
   if (recovering) return React.createElement(ResetPasswordScreen, null);
-  if (session === undefined || loading) return React.createElement(LoadingScreen, null);
+  if (!settingsLoaded || session === undefined || loading) return React.createElement(LoadingScreen, null);
   if (!session || !profile) return React.createElement(LoginScreen, null);
   if (profile.role === "ceo") return React.createElement(CEOApp, {
     profile: profile,
@@ -2361,6 +2391,7 @@ function RecoveryBookingPanel({
   const [cancellations, setCancellations] = useState([]);
   const [bookings, setBookings] = useState([]);
   const [allCancellations, setAllCancellations] = useState([]);
+  const [cancelledSessions, setCancelledSessions] = useState([]);
   const [allBookings, setAllBookings] = useState([]);
   const [manualCredits, setManualCredits] = useState([]);
   const [msg, setMsg] = useState("");
@@ -2375,6 +2406,9 @@ function RecoveryBookingPanel({
     sb.from("session_cancellations").select("*").then(({
       data
     }) => setAllCancellations(data || []));
+    sb.from("cancelled_sessions").select("*").then(({
+      data
+    }) => setCancelledSessions(data || []));
     sb.from("session_bookings").select("*").is("cancelled_at", null).then(({
       data
     }) => setAllBookings(data || []));
@@ -2431,6 +2465,7 @@ function RecoveryBookingPanel({
       if (!isSchoolDay(date)) return;
       groups.forEach(g => {
         if (g.active === false) return;
+        if ((cancelledSessions||[]).some(c=>c.group_id===g.id && c.session_date===date)) return;
         if ((myGroupIds || []).includes(g.id)) return;
         if (g.day !== dow) return;
         if (g.start_date && date < g.start_date) return;
@@ -3339,6 +3374,7 @@ function FlexBookingPanel({
 }) {
   const [bookings, setBookings] = useState([]);
   const [allCancellations, setAllCancellations] = useState([]);
+  const [cancelledSessions, setCancelledSessions] = useState([]);
   const [allBookings, setAllBookings] = useState([]);
   const [passes, setPasses] = useState([]);
   const [weekOffset, setWeekOffset] = useState(0);
@@ -3353,6 +3389,9 @@ function FlexBookingPanel({
     sb.from("session_cancellations").select("*").then(({
       data
     }) => setAllCancellations(data || []));
+    sb.from("cancelled_sessions").select("*").then(({
+      data
+    }) => setCancelledSessions(data || []));
     sb.from("session_bookings").select("*").is("cancelled_at", null).then(({
       data
     }) => setAllBookings(data || []));
@@ -3395,6 +3434,7 @@ function FlexBookingPanel({
       if (!isSchoolDay(date)) return;
       groups.forEach(g => {
         if (g.active === false) return;
+        if ((cancelledSessions||[]).some(c=>c.group_id===g.id && c.session_date===date)) return;
         if (g.day !== dow) return;
         if (g.start_date && date < g.start_date) return;
         if (hoursUntil(date, g.time_start) < 3) return;
@@ -4100,6 +4140,40 @@ function getStudentNotifications(profile, group, extraGroups, payments, classNot
     }
   }
   return items;
+}
+function getMissingAttendance(profile, groups, overrides, cancelledSessions, attendance, lookbackDays){
+  const myGroups = groups.filter(g => g.teacher === profile.teacher_name);
+  const missing = [];
+  const seen = new Set();
+  for(let i=1;i<=lookbackDays;i++){
+    const d = new Date(NOW);
+    d.setDate(d.getDate()-i);
+    const date = toLocalISO(d);
+    if(!isSchoolDay(date)) continue;
+    const dow = (d.getDay()+6)%7+1;
+    // Clases propias ese día
+    myGroups.forEach(g=>{
+      if(g.day!==dow) return;
+      if(g.start_date && date < g.start_date) return;
+      if((cancelledSessions||[]).some(c=>c.group_id===g.id && c.session_date===date)) return;
+      const key = g.id+"::"+date;
+      if(seen.has(key)) return;
+      seen.add(key);
+      const hasAttendance = attendance.some(a=>a.group_id===g.id && a.session_date===date);
+      if(!hasAttendance) missing.push({group:g, date});
+    });
+    // Clases donde sustituyó ese día
+    (overrides||[]).filter(o=>o.session_date===date && o.substitute_teacher===profile.teacher_name).forEach(o=>{
+      const g = groups.find(gg=>gg.id===o.group_id);
+      if(!g) return;
+      const key = g.id+"::"+date;
+      if(seen.has(key)) return;
+      seen.add(key);
+      const hasAttendance = attendance.some(a=>a.group_id===g.id && a.session_date===date);
+      if(!hasAttendance) missing.push({group:g, date});
+    });
+  }
+  return missing.sort((a,b)=>b.date.localeCompare(a.date));
 }
 function getTeacherNotifications(profile, groups, allProfiles, extraEnrollments, familyMembers, lastCheck) {
   const items = [];
@@ -5420,8 +5494,10 @@ function TeacherApp({
   const [familyMembers, setFamilyMembers] = useState([]);
   const [payments, setPayments] = useState([]);
   const [overrides, setOverrides] = useState([]);
+  const [cancelledSessions, setCancelledSessions] = useState([]);
   function load() {
     sb.from("session_teacher_overrides").select("*").then(({data}) => setOverrides(data||[]));
+    sb.from("cancelled_sessions").select("*").then(({data}) => setCancelledSessions(data||[]));
     sb.from("groups").select("*").order("day").then(({
       data
     }) => setGroups(data || []));
@@ -5455,7 +5531,12 @@ function TeacherApp({
   useEffect(() => {
     sb.from("profiles").select("last_dashboard_visit").eq("id",profile.id).single().then(({data}) => setMyLastCheck(data?.last_dashboard_visit || null));
   }, []);
-  const teacherNotifItems = useMemo(() => getTeacherNotifications(profile, groups, profiles, extraEnrollments, familyMembers, myLastCheck), [profile, groups, profiles, extraEnrollments, familyMembers, myLastCheck]);
+  const missingAttendance = useMemo(() => getMissingAttendance(profile, groups, overrides, cancelledSessions, attendance, 14), [profile, groups, overrides, cancelledSessions, attendance]);
+  const teacherNotifItems = useMemo(() => {
+    const base = getTeacherNotifications(profile, groups, profiles, extraEnrollments, familyMembers, myLastCheck);
+    if(missingAttendance.length > 0) base.unshift({text:`Tienes ${missingAttendance.length} clase${missingAttendance.length!==1?"s":""} sin pasar lista`, urgent:true});
+    return base;
+  }, [profile, groups, profiles, extraEnrollments, familyMembers, myLastCheck, missingAttendance]);
   const myGroups = groups.filter(g => g.teacher === profile.teacher_name && g.active !== false);
   const selectedDow = (new Date(selectedDate + "T00:00:00").getDay() + 6) % 7 + 1;
   const todaysOverridesIn = overrides.filter(o => o.session_date === selectedDate && o.substitute_teacher === profile.teacher_name);
@@ -5469,7 +5550,15 @@ function TeacherApp({
     d.setDate(d.getDate() + days);
     setSelectedDate(toLocalISO(d));
   }
-  const birthdaysToday = profiles.filter(p => p.role === "student" && isBirthday(p.birthdate));
+  const myGroupIdsForBirthdays = groups.filter(g => g.teacher === profile.teacher_name).map(g => g.id);
+  const myStudentIdsForBirthdays = new Set([
+    ...profiles.filter(p => p.role === "student" && myGroupIdsForBirthdays.includes(p.group_id)).map(p => p.id),
+    ...(extraEnrollments||[]).filter(e => myGroupIdsForBirthdays.includes(e.group_id)).map(e => e.student_id)
+  ]);
+  const birthdaysToday = [
+    ...profiles.filter(p => p.role === "student" && myStudentIdsForBirthdays.has(p.id) && isBirthday(p.birthdate)),
+    ...(familyMembers||[]).filter(f => myGroupIdsForBirthdays.includes(f.group_id) && isBirthday(f.birthdate))
+  ];
   const myLowOccupancyGroups = groups.filter(g => g.teacher === profile.teacher_name && (g.current_count||0) <= 2);
   return React.createElement("div", null, React.createElement("div", {
     className: "topbar"
@@ -5515,7 +5604,17 @@ function TeacherApp({
     return React.createElement("div", {
       key: w.id
     }, "🔔 ", React.createElement("b", null, s?.display_name || "Un alumno/a"), " ha solicitado la baja, efectiva desde ", MN[w.effective_month], " ", w.effective_year, ".");
-  })), tab === "mine" && React.createElement(React.Fragment, null, React.createElement("div", {
+  })), tab === "mine" && React.createElement(React.Fragment, null, missingAttendance.length > 0 && React.createElement("div", {
+    className: "card",
+    style: {marginBottom:14, borderLeft:"4px solid var(--rojo)", background:"#FCE7E7"}
+  }, React.createElement("div", {style:{fontWeight:800, color:"var(--rojo)", marginBottom:8}}, "⏰ Se te ha olvidado pasar lista"),
+     missingAttendance.map((m,i) => React.createElement("div", {
+       key: i,
+       style: {display:"flex", justifyContent:"space-between", alignItems:"center", padding:"6px 0", borderBottom: i<missingAttendance.length-1 ? "1px solid #f5c6c6" : "none", fontSize:13}
+     }, React.createElement("span", null, m.date, " — ", m.group.name, " (", m.group.time_start, ")"),
+        React.createElement("button", {className:"btn-secondary", style:{padding:"4px 10px", fontSize:12}, onClick: () => setSession({group:m.group, date:m.date})}, "Pasar lista")
+     ))
+  ), React.createElement("div", {
     className: "card",
     style: {
       marginBottom: 14,
@@ -5625,6 +5724,7 @@ function TeacherGroupCard({
   const [sending, setSending] = useState(false);
   const [dayBookings, setDayBookings] = useState([]);
   const [dayCancellations, setDayCancellations] = useState([]);
+  const [punctualCancel, setPunctualCancel] = useState(null);
   useEffect(() => {
     if (!date) return;
     sb.from("session_bookings").select("*").eq("group_id", g.id).eq("session_date", date).is("cancelled_at", null).then(({
@@ -5633,6 +5733,9 @@ function TeacherGroupCard({
     sb.from("session_cancellations").select("*").eq("group_id", g.id).eq("session_date", date).then(({
       data
     }) => setDayCancellations(data || []));
+    sb.from("cancelled_sessions").select("*").eq("group_id", g.id).eq("session_date", date).maybeSingle().then(({
+      data
+    }) => setPunctualCancel(data || null));
   }, [date]);
   const attendees = date ? dayAttendees(g, date, {
     profiles,
@@ -5695,7 +5798,18 @@ function TeacherGroupCard({
       color: "var(--gris)",
       marginBottom: 6
     }
-  }, "🚫 CANCELADA — no aparece en horarios ni en el pago a profesoras"), substitutionNote && React.createElement("div", {
+  }, "🚫 CANCELADA — no aparece en horarios ni en el pago a profesoras"), punctualCancel && React.createElement("div", {
+    style: {
+      background: "#F3F3F3",
+      border: "1px dashed #ccc",
+      borderRadius: 8,
+      padding: "4px 8px",
+      fontSize: 12,
+      color: "var(--gris)",
+      marginBottom: 8,
+      fontWeight: 700
+    }
+  }, "🚫 Esta clase está cancelada solo hoy", punctualCancel.reason && ` (${punctualCancel.reason})`), substitutionNote && React.createElement("div", {
     style: {
       background: "#FFF3D6",
       border: "1px solid var(--mostaza)",
@@ -5722,7 +5836,7 @@ function TeacherGroupCard({
   }, React.createElement("button", {
     className: "btn-ghost",
     onClick: () => setOpen(o => !o)
-  }, open ? "Cerrar" : "Ver alumnos y avisos"), onTakeAttendance && React.createElement("button", {
+  }, open ? "Cerrar" : "Ver alumnos y avisos"), onTakeAttendance && !punctualCancel && React.createElement("button", {
     className: "btn-secondary",
     onClick: onTakeAttendance
   }, "Pasar lista"), onEdit && React.createElement("button", {
@@ -6420,6 +6534,7 @@ function CEODashboard({
   familyMembers,
   withdrawals,
   allWithdrawals,
+  cancelledSessions,
   profile,
   recurringExpenses,
   rates,
@@ -6470,38 +6585,30 @@ function CEODashboard({
       ...enrolledStudents.map(s => ({created_at: s.created_at})),
       ...(familyMembers||[]).map(f => ({created_at: f.created_at}))
     ];
-    // El total de HOY es el dato seguro (el mismo que el KPI de arriba) — todo el histórico se reconstruye
-    // hacia atrás desde aquí, para que el gráfico nunca pueda descuadrarse con ese número.
-    const currentTotal = enrolledStudents.length + (familyMembers||[]).length;
-    const withMovement = STUDENT_CHART_MONTHS.map(m => {
+    const firstKey = STUDENT_CHART_MONTHS[0].year * 12 + STUDENT_CHART_MONTHS[0].month;
+    const before = allPeople.filter(s => {
+      if (!s.created_at) return false;
+      const cd = new Date(s.created_at);
+      return (cd.getFullYear() * 12 + (cd.getMonth() + 1)) < firstKey;
+    }).length;
+    const withdrawalsBefore = (allWithdrawals||[]).filter(w => (w.effective_year*12 + w.effective_month) < firstKey).length;
+    // Evolución real mes a mes: cada mes suma sus altas y resta sus bajas, en orden, desde el principio del curso.
+    let cumulative = Math.max(0, before - withdrawalsBefore);
+    return STUDENT_CHART_MONTHS.map(m => {
       const nuevos = allPeople.filter(s => {
         if (!s.created_at) return false;
         const cd = new Date(s.created_at);
         return cd.getFullYear() === m.year && cd.getMonth() + 1 === m.month;
       }).length;
       const bajas = (allWithdrawals||[]).filter(w => w.effective_year===m.year && w.effective_month===m.month).length;
-      return {...m, nuevos, bajas};
+      cumulative = Math.max(0, cumulative + nuevos - bajas);
+      return {
+        label: MN[m.month].slice(0, 3),
+        nuevos,
+        bajas,
+        activos: cumulative
+      };
     });
-    const nowKey = CY*12+CM;
-    let idxNow = withMovement.findIndex(m => m.year*12+m.month === nowKey);
-    if(idxNow === -1) idxNow = todayISO < COURSE_START ? 0 : withMovement.length-1;
-    const activos = new Array(withMovement.length);
-    activos[idxNow] = currentTotal;
-    let running = currentTotal;
-    for(let i=idxNow-1;i>=0;i--){
-      // Deshacemos lo que pasó en el mes siguiente para saber cómo estábamos a final de este mes
-      running = running - withMovement[i+1].nuevos + withMovement[i+1].bajas;
-      activos[i] = Math.max(0, running);
-    }
-    for(let i=idxNow+1;i<withMovement.length;i++){
-      activos[i] = currentTotal; // meses futuros: aún no hay datos reales, mantenemos el total de hoy
-    }
-    return withMovement.map((m,i) => ({
-      label: MN[m.month].slice(0, 3),
-      nuevos: m.nuevos,
-      bajas: m.bajas,
-      activos: activos[i]
-    }));
   }, [enrolledStudents, familyMembers, allWithdrawals]);
   const courseChartMonths = FISCAL_MONTHS.map(m => MN[m.month].slice(0, 3) + " " + String(m.year).slice(2));
   const incomeByMonth = useMemo(() => {
@@ -6537,7 +6644,8 @@ function CEODashboard({
       extraEnrollments,
       familyMembers,
       rates,
-      tiers
+      tiers,
+      cancelledSessions
     }).total, 0);
     const revShare = TEACHERS.reduce((s, t) => s + computeRevenueShareForTeacher(t, year, monthNum, {
       groups,
@@ -7555,6 +7663,107 @@ function StudentContactRow({
     }
   }, ageWarn));
 }
+function DataAuditView({
+  groups,
+  profiles,
+  extraEnrollments,
+  familyMembers,
+  payments
+}) {
+  const students = profiles.filter(p => p.role === "student");
+  const incomplete = students.filter(s => !s.group_id && s.enrollment_mode !== "flex");
+  const duplicatedExtra = extraEnrollments.filter(e => {
+    const p = students.find(s => s.id === e.student_id);
+    return p && p.group_id === e.group_id;
+  }).map(e => ({
+    ...e,
+    studentName: students.find(s => s.id === e.student_id)?.display_name
+  }));
+  const extraCounts = {};
+  extraEnrollments.forEach(e => {
+    extraCounts[e.student_id] = (extraCounts[e.student_id] || 0) + 1;
+  });
+  const ambiguousOrphans = students.filter(s => !s.group_id && (extraCounts[s.id] || 0) >= 2);
+  const groupIds = new Set(groups.map(g => g.id));
+  const brokenGroupRef = students.filter(s => s.group_id && !groupIds.has(s.group_id));
+  const zeroPayments = payments.filter(p => p.status === "validated" && (!p.amount || p.amount <= 0));
+  const missingPhone = students.filter(s => !s.guardian_phone && (s.group_id || s.enrollment_mode === "flex"));
+  const typoTeachers = groups.filter(g => g.active !== false && !TEACHERS.includes(g.teacher));
+  const sections = [{
+    title: "📋 Inscripciones sin completar",
+    items: incomplete,
+    render: s => `${s.display_name} — sin clase ni modalidad flexible`
+  }, {
+    title: "🔁 Clase extra duplicando la principal",
+    items: duplicatedExtra,
+    render: e => `${e.studentName} — clase extra apuntando al mismo grupo que ya tiene como principal`
+  }, {
+    title: "❓ Sin clase principal, con varias extra",
+    items: ambiguousOrphans,
+    render: s => `${s.display_name} — sin clase principal pero con ${extraCounts[s.id]} filas extra (revisar a mano cuál debería ser la principal)`
+  }, {
+    title: "🔗 Clase principal que ya no existe",
+    items: brokenGroupRef,
+    render: s => `${s.display_name} — su clase asignada fue borrada o cancelada`
+  }, {
+    title: "💶 Pagos validados en 0€",
+    items: zeroPayments,
+    render: p => {
+      const s = students.find(st => st.id === p.student_id);
+      return `${s?.display_name || "Alumno/a"} — ${MN[p.month]} ${p.year}, validado con ${p.amount || 0}€`;
+    }
+  }, {
+    title: "📵 Sin teléfono de contacto",
+    items: missingPhone,
+    render: s => `${s.display_name} — no hay ningún teléfono guardado`
+  }, {
+    title: "✏️ Profesora no reconocida en una clase",
+    items: typoTeachers,
+    render: g => `${g.name} (${DNF[g.day - 1]} ${g.time_start}) — profesora "${g.teacher}" no está en la lista oficial`
+  }];
+  const totalIssues = sections.reduce((s, sec) => s + sec.items.length, 0);
+  return React.createElement("div", null, React.createElement("div", {
+    className: "card",
+    style: {
+      marginBottom: 14,
+      borderLeft: `4px solid ${totalIssues === 0 ? "var(--verde)" : "var(--rojo)"}`
+    }
+  }, React.createElement("h3", {
+    style: {
+      marginTop: 0
+    }
+  }, "🔍 Auditoría de datos"), React.createElement("p", {
+    style: {
+      fontSize: 13,
+      color: "var(--gris)",
+      marginTop: -6
+    }
+  }, "Revisa sola, cada vez que entras aquí, los patrones de fallos que ya hemos visto repetirse (como los casos de Martín, Alba o Cristina) — para adelantarte antes de que una familia se queje."), totalIssues === 0 && React.createElement("div", {
+    style: {
+      fontSize: 14,
+      fontWeight: 700,
+      color: "var(--verde)"
+    }
+  }, "✓ Todo limpio ahora mismo — no se ha detectado ningún caso sospechoso.")), sections.filter(sec => sec.items.length > 0).map((sec, i) => React.createElement("div", {
+    key: i,
+    className: "card",
+    style: {
+      marginBottom: 12,
+      borderLeft: "4px solid var(--mostaza)"
+    }
+  }, React.createElement("h4", {
+    style: {
+      marginTop: 0
+    }
+  }, sec.title, " (", sec.items.length, ")"), sec.items.map((item, j) => React.createElement("div", {
+    key: j,
+    style: {
+      fontSize: 13,
+      padding: "5px 0",
+      borderBottom: j < sec.items.length - 1 ? "1px solid #EEF2F8" : "none"
+    }
+  }, sec.render(item))))));
+}
 function StudentsDirectoryView({
   groups,
   profiles,
@@ -8479,28 +8688,285 @@ function StatsView({
   extraEnrollments,
   familyMembers
 }) {
-  const roster = [];
-  groups.forEach(g => effectiveRoster(g, profiles, extraEnrollments, familyMembers).forEach(name => roster.push({
-    name,
-    group: g.name
-  })));
-  function counts(name) {
-    const rows = attendance.filter(a => a.student_name === name);
-    return {
-      pr: rows.filter(r => r.status === "pr").length,
-      ar: rows.filter(r => r.status === "ar").length,
-      ab: rows.filter(r => r.status === "ab").length
+  const students = profiles.filter(p => p.role === "student");
+  const occupancyByClass = useMemo(() => {
+    return groups.filter(g => g.active !== false).map(g => {
+      const count = effectiveRoster(g, profiles, extraEnrollments, familyMembers).length;
+      const cap = capOf(g);
+      return {
+        g,
+        count,
+        cap,
+        pct: cap > 0 ? Math.round(count / cap * 100) : 0
+      };
+    }).sort((a, b) => a.pct - b.pct);
+  }, [groups, profiles, extraEnrollments, familyMembers]);
+  const attendanceByStudent = useMemo(() => {
+    const roster = [];
+    groups.forEach(g => effectiveRoster(g, profiles, extraEnrollments, familyMembers).forEach(name => roster.push({
+      name,
+      groupName: g.name
+    })));
+    return roster.map(r => {
+      const rows = attendance.filter(a => a.student_name === r.name);
+      const pr = rows.filter(a => a.status === "pr").length;
+      const ar = rows.filter(a => a.status === "ar").length;
+      const ab = rows.filter(a => a.status === "ab").length;
+      const total = pr + ar + ab;
+      return {
+        ...r,
+        pr,
+        ar,
+        ab,
+        total,
+        pct: total > 0 ? Math.round(100 * pr / total) : null
+      };
+    }).filter(r => r.total >= 2).sort((a, b) => (a.pct ?? 100) - (b.pct ?? 100));
+  }, [groups, profiles, attendance, extraEnrollments, familyMembers]);
+  const lowAttendance = attendanceByStudent.filter(r => r.pct !== null && r.pct < 70);
+  const byWeekday = useMemo(() => {
+    return DNF.map((label, i) => {
+      const dow = i + 1;
+      const count = groups.filter(g => g.day === dow && g.active !== false).reduce((s, g) => s + effectiveRoster(g, profiles, extraEnrollments, familyMembers).length, 0);
+      return {
+        label: label.slice(0, 3),
+        value: count
+      };
+    });
+  }, [groups, profiles, extraEnrollments, familyMembers]);
+  const ageGroups = useMemo(() => {
+    const buckets = {
+      "Niños (≤8)": 0,
+      "Jóvenes (9-13)": 0,
+      "Adultos (14+)": 0,
+      "Sin fecha": 0
     };
-  }
-  return React.createElement("div", {
-    className: "table-wrap"
-  }, React.createElement("table", null, React.createElement("thead", null, React.createElement("tr", null, React.createElement("th", null, "Alumno"), React.createElement("th", null, "Clase"), React.createElement("th", null, "Presencias"), React.createElement("th", null, "Recup."), React.createElement("th", null, "Ausencias"))), React.createElement("tbody", null, roster.map((r, i) => {
-    const c = counts(r.name);
-    const total = c.pr + c.ar + c.ab;
-    return React.createElement("tr", {
-      key: i
-    }, React.createElement("td", null, r.name), React.createElement("td", null, r.group), React.createElement("td", null, c.pr), React.createElement("td", null, c.ar), React.createElement("td", null, c.ab, total > 0 && ` (${Math.round(100 * c.pr / total)}%)`));
-  }))));
+    students.forEach(s => {
+      const age = ageFromBirthdate(s.birthdate);
+      if (age === null) buckets["Sin fecha"]++;else if (age <= 8) buckets["Niños (≤8)"]++;else if (age <= 13) buckets["Jóvenes (9-13)"]++;else buckets["Adultos (14+)"]++;
+    });
+    return buckets;
+  }, [students]);
+  const paymentPref = useMemo(() => {
+    const efectivo = students.filter(s => s.preferred_payment_method === "efectivo").length;
+    const transferencia = students.length - efectivo;
+    return {
+      efectivo,
+      transferencia
+    };
+  }, [students]);
+  const modeBreakdown = useMemo(() => {
+    const fija = students.filter(s => s.group_id && s.enrollment_mode !== "flex").length;
+    const flexible = students.filter(s => s.enrollment_mode === "flex").length;
+    const sinClase = students.length - fija - flexible;
+    return {
+      fija,
+      flexible,
+      sinClase
+    };
+  }, [students]);
+  const sourceLabels = {instagram:"Instagram", facebook:"Facebook", google:"Google", recomendacion:"Recomendación", calle:"Calle/cartel", otro:"Otro"};
+  const howFoundUs = useMemo(() => {
+    const counts = {};
+    students.forEach(s => {
+      if (!s.how_found_us) return;
+      counts[s.how_found_us] = (counts[s.how_found_us]||0)+1;
+    });
+    return Object.entries(counts).sort((a,b)=>b[1]-a[1]).map(([k,v])=>({label:sourceLabels[k]||k, value:v}));
+  }, [students]);
+  const maxAgeBucket = Math.max(1, ...Object.values(ageGroups));
+  return React.createElement("div", null, React.createElement("div", {
+    className: "card",
+    style: {
+      marginBottom: 14
+    }
+  }, React.createElement("h3", {
+    style: {
+      marginTop: 0
+    }
+  }, "📊 Ocupación por clase"), React.createElement("p", {
+    style: {
+      fontSize: 12,
+      color: "var(--gris)",
+      marginTop: -6
+    }
+  }, "De menos a más llena — las de arriba son las que más te interesa vigilar."), occupancyByClass.map(({
+    g,
+    count,
+    cap,
+    pct
+  }) => React.createElement("div", {
+    key: g.id,
+    style: {
+      marginBottom: 10
+    }
+  }, React.createElement("div", {
+    style: {
+      display: "flex",
+      justifyContent: "space-between",
+      fontSize: 13,
+      marginBottom: 3
+    }
+  }, React.createElement("span", null, React.createElement("b", null, g.name), " · ", DNF[g.day - 1], " ", g.time_start, " · ", g.teacher), React.createElement("span", {
+    style: {
+      fontWeight: 700,
+      color: pct <= 30 ? "var(--rojo)" : pct >= 90 ? "var(--verde)" : "var(--gris)"
+    }
+  }, count, "/", cap)), React.createElement("div", {
+    style: {
+      background: "#EEF2F8",
+      borderRadius: 6,
+      height: 8,
+      overflow: "hidden"
+    }
+  }, React.createElement("div", {
+    style: {
+      width: `${Math.min(100, pct)}%`,
+      height: "100%",
+      background: pct <= 30 ? "var(--rojo)" : pct >= 90 ? "var(--verde)" : "var(--mostaza)"
+    }
+  })))), occupancyByClass.length === 0 && React.createElement("div", {
+    className: "empty"
+  }, "No hay clases activas todavía.")), React.createElement("div", {
+    className: "card",
+    style: {
+      marginBottom: 14
+    }
+  }, React.createElement("h3", {
+    style: {
+      marginTop: 0
+    }
+  }, "⚠️ Alumnado con asistencia baja"), React.createElement("p", {
+    style: {
+      fontSize: 12,
+      color: "var(--gris)",
+      marginTop: -6
+    }
+  }, "Menos del 70% de asistencia (con al menos 2 sesiones registradas) — puede merecer una llamada."), lowAttendance.length === 0 && React.createElement("div", {
+    className: "empty"
+  }, "Nadie por debajo del 70% ahora mismo. 🎉"), lowAttendance.map((r, i) => React.createElement("div", {
+    key: i,
+    style: {
+      display: "flex",
+      justifyContent: "space-between",
+      padding: "6px 0",
+      borderBottom: "1px solid #EEF2F8",
+      fontSize: 13
+    }
+  }, React.createElement("span", null, r.name, " ", React.createElement("span", {
+    style: {
+      color: "var(--gris)"
+    }
+  }, "· ", r.groupName)), React.createElement("span", {
+    style: {
+      fontWeight: 700,
+      color: "var(--rojo)"
+    }
+  }, r.pct, "% (", r.pr, "/", r.total, ")")))), React.createElement("div", {
+    className: "card",
+    style: {
+      marginBottom: 14
+    }
+  }, React.createElement("h3", {
+    style: {
+      marginTop: 0
+    }
+  }, "📅 Alumnado por día de la semana"), React.createElement("p", {
+    style: {
+      fontSize: 12,
+      color: "var(--gris)",
+      marginTop: -6
+    }
+  }, "Suma de alumnos en todas las clases de cada día."), React.createElement(BarChart, {
+    data: byWeekday,
+    color: "var(--azul-claro)"
+  })), React.createElement("div", {
+    className: "card",
+    style: {
+      marginBottom: 14
+    }
+  }, React.createElement("h3", {
+    style: {
+      marginTop: 0
+    }
+  }, "🎂 Reparto de edades"), Object.entries(ageGroups).filter(([k, v]) => v > 0).map(([label, value]) => React.createElement("div", {
+    key: label,
+    style: {
+      marginBottom: 8
+    }
+  }, React.createElement("div", {
+    style: {
+      display: "flex",
+      justifyContent: "space-between",
+      fontSize: 13,
+      marginBottom: 3
+    }
+  }, React.createElement("span", null, label), React.createElement("span", {
+    style: {
+      fontWeight: 700
+    }
+  }, value)), React.createElement("div", {
+    style: {
+      background: "#EEF2F8",
+      borderRadius: 6,
+      height: 8,
+      overflow: "hidden"
+    }
+  }, React.createElement("div", {
+    style: {
+      width: `${value / maxAgeBucket * 100}%`,
+      height: "100%",
+      background: "var(--mostaza)"
+    }
+  }))))), React.createElement("div", {
+    className: "row",
+    style: {
+      gap: 14
+    }
+  }, React.createElement("div", {
+    className: "col card"
+  }, React.createElement("h4", {
+    style: {
+      marginTop: 0,
+      fontSize: 14
+    }
+  }, "💳 Forma de pago"), React.createElement("div", {
+    style: {
+      fontSize: 13,
+      marginBottom: 4
+    }
+  }, "Transferencia: ", React.createElement("b", null, paymentPref.transferencia)), React.createElement("div", {
+    style: {
+      fontSize: 13
+    }
+  }, "Efectivo: ", React.createElement("b", null, paymentPref.efectivo))), React.createElement("div", {
+    className: "col card"
+  }, React.createElement("h4", {
+    style: {
+      marginTop: 0,
+      fontSize: 14
+    }
+  }, "📋 Modalidad"), React.createElement("div", {
+    style: {
+      fontSize: 13,
+      marginBottom: 4
+    }
+  }, "Fija: ", React.createElement("b", null, modeBreakdown.fija)), React.createElement("div", {
+    style: {
+      fontSize: 13,
+      marginBottom: 4
+    }
+  }, "Flexible: ", React.createElement("b", null, modeBreakdown.flexible)), modeBreakdown.sinClase > 0 && React.createElement("div", {
+    style: {
+      fontSize: 13,
+      color: "var(--rojo)"
+    }
+  }, "Sin clase: ", React.createElement("b", null, modeBreakdown.sinClase))), howFoundUs.length > 0 && React.createElement("div", {
+    className: "card",
+    style: {marginTop: 14}
+  }, React.createElement("h4", {style:{marginTop:0}}, "📣 ¿Cómo nos han conocido?"),
+     React.createElement(BarChart, {data: howFoundUs, color: "var(--verde)"})
+  )));
 }
 function hoursOfGroup(g) {
   const [h1, m1] = g.time_start.split(":").map(Number),
@@ -8595,7 +9061,8 @@ function estimateTeacherPay(teacherName, year, month, {
   extraEnrollments,
   familyMembers,
   rates,
-  tiers
+  tiers,
+  cancelledSessions
 }) {
   const myGroups = groups.filter(g => g.teacher === teacherName && g.pay_model !== "revenue_share" && g.active !== false);
   const rate = rates.find(r => r.teacher_name === teacherName)?.rate_per_hour || 0;
@@ -8603,7 +9070,9 @@ function estimateTeacherPay(teacherName, year, month, {
     hours = 0,
     total = 0;
   myGroups.forEach(g => {
-    const dates = datesInMonthForWeekday(year, month, g.day, g.start_date);
+    const allDates = datesInMonthForWeekday(year, month, g.day, g.start_date);
+    // No contamos las fechas concretas que se hayan cancelado puntualmente (aunque el grupo siga activo)
+    const dates = allDates.filter(d => !(cancelledSessions||[]).some(c => c.group_id === g.id && c.session_date === d));
     if (dates.length === 0) return;
     const groupHours = hoursOfGroup(g);
     const students = effectiveRoster(g, profiles, extraEnrollments, familyMembers).length;
@@ -8686,7 +9155,7 @@ function TeacherDetailTable({
   }, [rows]);
   if (rows.length === 0) return React.createElement("div", {
     className: "empty"
-  }, "Sin sesiones registradas en ", MN[month], " ", year, ".");
+  }, "Todavía no hay ninguna clase con lista pasada en ", MN[month], " ", year, " para esta profesora. En cuanto pase lista de alguna sesión, aparecerá aquí.");
   return React.createElement("div", null, React.createElement("div", {
     className: "table-wrap"
   }, React.createElement("table", null, React.createElement("thead", null, React.createElement("tr", null, React.createElement("th", null, "Día"), React.createElement("th", null, "Clase"), React.createElement("th", null, "Horas"), React.createElement("th", null, "Alumnos"), React.createElement("th", null, "Tarifa+incentivo"), React.createElement("th", null, "Subtotal"))), React.createElement("tbody", null, rows.map((r, i) => React.createElement("tr", {
@@ -8851,7 +9320,8 @@ function TeacherPayView({
   tiers,
   profiles,
   extraEnrollments,
-  familyMembers
+  familyMembers,
+  cancelledSessions
 }) {
   const [year, setYear] = useState(CY);
   const [month, setMonth] = useState(CM);
@@ -8886,7 +9356,8 @@ function TeacherPayView({
         extraEnrollments,
         familyMembers,
         rates,
-        tiers
+        tiers,
+        cancelledSessions
       });
     });
     return map;
@@ -9001,7 +9472,8 @@ function TeacherPayView({
       style: {
         padding: "4px 10px",
         fontSize: 12
-      }
+      },
+      onClick: (e) => { e.stopPropagation(); setDetailTeacher(open ? null : t); }
     }, open ? "Cerrar" : "Ver detalle")), React.createElement("div", {
       style: {
         display: "grid",
@@ -10593,7 +11065,10 @@ function WeeklyDetailView({
   const [weekOffset, setWeekOffset] = useState(0);
   const [allBookings, setAllBookings] = useState([]);
   const [allCancellations, setAllCancellations] = useState([]);
+  const [cancelledSessions, setCancelledSessions] = useState([]);
   const [expanded, setExpanded] = useState(null);
+  const [cancellingKey, setCancellingKey] = useState(null);
+  const [cancelReason, setCancelReason] = useState("");
   const weekDates = useMemo(() => {
     const base = new Date(NOW);
     base.setHours(0, 0, 0, 0);
@@ -10608,14 +11083,37 @@ function WeeklyDetailView({
       return toLocalISO(d);
     });
   }, [weekOffset]);
-  useEffect(() => {
+  function load() {
     sb.from("session_bookings").select("*").gte("session_date", weekDates[0]).lte("session_date", weekDates[4]).is("cancelled_at", null).then(({
       data
     }) => setAllBookings(data || []));
     sb.from("session_cancellations").select("*").gte("session_date", weekDates[0]).lte("session_date", weekDates[4]).then(({
       data
     }) => setAllCancellations(data || []));
-  }, [weekDates]);
+    sb.from("cancelled_sessions").select("*").gte("session_date", weekDates[0]).lte("session_date", weekDates[4]).then(({
+      data
+    }) => setCancelledSessions(data || []));
+  }
+  useEffect(load, [weekDates]);
+  function isCancelled(groupId, date) {
+    return cancelledSessions.find(c => c.group_id === groupId && c.session_date === date);
+  }
+  async function cancelSession(groupId, date) {
+    await sb.from("cancelled_sessions").insert({
+      group_id: groupId,
+      session_date: date,
+      reason: cancelReason.trim() || null,
+      cancelled_by: "dirección"
+    });
+    setCancellingKey(null);
+    setCancelReason("");
+    load();
+  }
+  async function uncancelSession(id) {
+    if (!window.confirm("¿Reactivar esta clase para ese día?")) return;
+    await sb.from("cancelled_sessions").delete().eq("id", id);
+    load();
+  }
   const firstDate = new Date(weekDates[0] + "T00:00:00");
   const lastDate = new Date(weekDates[4] + "T00:00:00");
   return React.createElement("div", null, React.createElement("div", {
@@ -10680,6 +11178,7 @@ function WeeklyDetailView({
         color: "var(--gris)"
       }
     }, "—"), classesToday.map(g => {
+      const cancelled = isCancelled(g.id, date);
       const attendees = dayAttendees(g, date, {
         profiles,
         extraEnrollments,
@@ -10691,6 +11190,37 @@ function WeeklyDetailView({
       const key = g.id + "::" + date;
       const isOpen = expanded === key;
       const low = attendees.length <= 2;
+      if (cancelled) {
+        return React.createElement("div", {
+          key: key,
+          style: {
+            marginBottom: 6,
+            borderRadius: 10,
+            padding: "8px 10px",
+            background: "#F3F3F3",
+            border: "2px dashed #ccc"
+          }
+        }, React.createElement("div", {
+          style: {
+            fontWeight: 700,
+            fontSize: 12,
+            color: "var(--gris)"
+          }
+        }, "🚫 ", g.name, " — cancelada este día"), React.createElement("div", {
+          style: {
+            fontSize: 11,
+            color: "var(--gris)"
+          }
+        }, g.teacher, " · ", g.time_start, cancelled.reason && ` · ${cancelled.reason}`), React.createElement("button", {
+          className: "btn-ghost",
+          style: {
+            padding: "2px 8px",
+            fontSize: 10,
+            marginTop: 4
+          },
+          onClick: () => uncancelSession(cancelled.id)
+        }, "Reactivar"));
+      }
       return React.createElement("div", {
         key: key
       }, React.createElement("div", {
@@ -10748,7 +11278,49 @@ function WeeklyDetailView({
           color: a.type === "flexible" ? "var(--verde)" : a.type === "bono" ? "#6a4b00" : "var(--azul-oscuro)",
           fontSize: 9
         }
-      }, a.type)))));
+      }, a.type))), cancellingKey !== key ? React.createElement("button", {
+        className: "btn-ghost",
+        style: {
+          marginTop: 8,
+          fontSize: 11,
+          color: "var(--rojo)"
+        },
+        onClick: () => setCancellingKey(key)
+      }, "Cancelar esta clase solo este día") : React.createElement("div", {
+        style: {
+          marginTop: 8
+        }
+      }, React.createElement("input", {
+        style: {
+          fontSize: 12,
+          width: "100%",
+          marginBottom: 6
+        },
+        value: cancelReason,
+        onChange: e => setCancelReason(e.target.value),
+        placeholder: "Motivo (opcional): ej. pocos alumnos"
+      }), React.createElement("div", {
+        className: "row",
+        style: {
+          gap: 6
+        }
+      }, React.createElement("button", {
+        className: "btn-ghost",
+        style: {
+          fontSize: 11
+        },
+        onClick: () => {
+          setCancellingKey(null);
+          setCancelReason("");
+        }
+      }, "Cancelar"), React.createElement("button", {
+        className: "btn-primary",
+        style: {
+          fontSize: 11,
+          padding: "4px 10px"
+        },
+        onClick: () => cancelSession(g.id, date)
+      }, "Confirmar")))));
     }));
   })));
 }
@@ -11041,6 +11613,217 @@ function getCEONotifications(groups, profiles, extraEnrollments, familyMembers, 
   if(cash>0) items.push({text:`${cash} pago${cash!==1?"s":""} en efectivo reportado${cash!==1?"s":""} por profesoras, pendiente${cash!==1?"s":""} de validar`, urgent:false});
   return items;
 }
+function SettingsView() {
+  const [values, setValues] = useState({
+    standard_enrollment_fee: String(STANDARD_ENROLLMENT_FEE),
+    course_start: COURSE_START,
+    course_end: COURSE_END,
+    next_cleaning_date: NEXT_CLEANING_DATE,
+    cleaning_interval_days: String(CLEANING_INTERVAL_DAYS),
+    iban: IBAN,
+    academy_whatsapp: ACADEMY_WHATSAPP
+  });
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState("");
+  function upd(key, val) {
+    setValues(v => ({
+      ...v,
+      [key]: val
+    }));
+  }
+  async function save() {
+    setSaving(true);
+    setMsg("");
+    const rows = Object.entries(values).map(([key, value]) => ({
+      key,
+      value: String(value)
+    }));
+    const {
+      error
+    } = await sb.from("app_settings").upsert(rows, {
+      onConflict: "key"
+    });
+    setSaving(false);
+    if (error) {
+      setMsg("❌ " + error.message);
+      return;
+    }
+    STANDARD_ENROLLMENT_FEE = parseFloat(values.standard_enrollment_fee) || 0;
+    COURSE_START = values.course_start;
+    COURSE_START_YEAR = parseInt(values.course_start.slice(0, 4));
+    COURSE_END = values.course_end;
+    NEXT_CLEANING_DATE = values.next_cleaning_date;
+    CLEANING_INTERVAL_DAYS = parseInt(values.cleaning_interval_days) || 14;
+    IBAN = values.iban;
+    ACADEMY_WHATSAPP = values.academy_whatsapp;
+    setMsg("✅ Guardado y aplicado. Los cambios ya están activos en toda la app.");
+  }
+  return React.createElement("div", {
+    className: "card"
+  }, React.createElement("h3", {
+    style: {
+      marginTop: 0
+    }
+  }, "⚙️ Configuración"), React.createElement("p", {
+    style: {
+      fontSize: 13,
+      color: "var(--gris)",
+      marginTop: -6
+    }
+  }, "Estos datos antes estaban escritos directamente en el código — ahora puedes cambiarlos tú misma, sin tener que pedírmelo."), React.createElement(Field, {
+    label: "Fecha de inicio del curso"
+  }, React.createElement("input", {
+    type: "date",
+    value: values.course_start,
+    onChange: e => upd("course_start", e.target.value)
+  })), React.createElement(Field, {
+    label: "Fecha de fin del curso"
+  }, React.createElement("input", {
+    type: "date",
+    value: values.course_end,
+    onChange: e => upd("course_end", e.target.value)
+  })), React.createElement(Field, {
+    label: "Cuota de matrícula estándar (€)"
+  }, React.createElement("input", {
+    type: "number",
+    value: values.standard_enrollment_fee,
+    onChange: e => upd("standard_enrollment_fee", e.target.value)
+  })), React.createElement(Field, {
+    label: "IBAN de la academia"
+  }, React.createElement("input", {
+    value: values.iban,
+    onChange: e => upd("iban", e.target.value)
+  })), React.createElement(Field, {
+    label: "WhatsApp de la academia (con prefijo, sin +, ej: 34600111222)"
+  }, React.createElement("input", {
+    value: values.academy_whatsapp,
+    onChange: e => upd("academy_whatsapp", e.target.value)
+  })), React.createElement(Field, {
+    label: "Próxima limpieza general"
+  }, React.createElement("input", {
+    type: "date",
+    value: values.next_cleaning_date,
+    onChange: e => upd("next_cleaning_date", e.target.value)
+  })), React.createElement(Field, {
+    label: "Cada cuántos días se repite la limpieza"
+  }, React.createElement("input", {
+    type: "number",
+    value: values.cleaning_interval_days,
+    onChange: e => upd("cleaning_interval_days", e.target.value)
+  })), msg && React.createElement("p", {
+    style: {
+      fontSize: 13
+    }
+  }, msg), React.createElement("button", {
+    className: "btn-primary",
+    disabled: saving,
+    onClick: save,
+    style: {
+      marginTop: 8
+    }
+  }, saving ? "Guardando…" : "Guardar cambios"));
+}
+function ExportView({
+  payments,
+  expenses,
+  profiles
+}) {
+  const [year, setYear] = useState(CY);
+  const [month, setMonth] = useState(CM);
+  const [msg, setMsg] = useState("");
+  function csvEscape(val) {
+    const s = String(val ?? "");
+    if (s.includes(";") || s.includes('"') || s.includes("\n")) {
+      return '"' + s.replace(/"/g, '""') + '"';
+    }
+    return s;
+  }
+  function download(filename, rows) {
+    const csv = rows.map(row => row.map(csvEscape).join(";")).join("\n");
+    const blob = new Blob(["\uFEFF" + csv], {
+      type: "text/csv;charset=utf-8;"
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+  function exportMonth() {
+    const incomeRows = payments.filter(p => p.status === "validated" && p.year === year && p.month === month);
+    const expenseRows = expenses.filter(e => e.year === year && e.month === month);
+    if (incomeRows.length === 0 && expenseRows.length === 0) {
+      setMsg("No hay ingresos ni gastos validados para ese mes.");
+      return;
+    }
+    const rows = [["Tipo", "Fecha", "Concepto", "Categoría", "Importe"]];
+    incomeRows.forEach(p => {
+      const s = profiles.find(pr => pr.id === p.student_id);
+      rows.push(["Ingreso", `${MN[p.month]} ${p.year}`, `Cuota — ${s?.display_name || "Alumno/a"}`, "Clases", (p.amount || 0).toFixed(2).replace(".", ",")]);
+    });
+    expenseRows.forEach(e => {
+      rows.push(["Gasto", `${MN[e.month]} ${e.year}`, e.concept, e.category || "Otros", (-Math.abs(e.amount || 0)).toFixed(2).replace(".", ",")]);
+    });
+    const totalIncome = incomeRows.reduce((s, p) => s + (p.amount || 0), 0);
+    const totalExpense = expenseRows.reduce((s, e) => s + (e.amount || 0), 0);
+    rows.push(["", "", "", "Total ingresos", totalIncome.toFixed(2).replace(".", ",")]);
+    rows.push(["", "", "", "Total gastos", totalExpense.toFixed(2).replace(".", ",")]);
+    rows.push(["", "", "", "Balance", (totalIncome - totalExpense).toFixed(2).replace(".", ",")]);
+    download(`CANVAS_${year}_${String(month).padStart(2, "0")}.csv`, rows);
+    setMsg(`✅ Descargado — ${incomeRows.length} ingresos y ${expenseRows.length} gastos.`);
+  }
+  return React.createElement("div", {
+    className: "card"
+  }, React.createElement("h3", {
+    style: {
+      marginTop: 0
+    }
+  }, "📤 Exportar para tu gestoría"), React.createElement("p", {
+    style: {
+      fontSize: 13,
+      color: "var(--gris)",
+      marginTop: -6
+    }
+  }, "Genera un CSV con todos los ingresos validados y gastos de un mes, listo para pasarle a ABAQ — sin tener que picar los datos a mano."), React.createElement("div", {
+    className: "row",
+    style: {
+      alignItems: "flex-end"
+    }
+  }, React.createElement("div", {
+    className: "col"
+  }, React.createElement(Field, {
+    label: "Mes"
+  }, React.createElement("select", {
+    value: month,
+    onChange: e => setMonth(parseInt(e.target.value))
+  }, MN.slice(1).map((m, i) => React.createElement("option", {
+    key: m,
+    value: i + 1
+  }, m))))), React.createElement("div", {
+    className: "col"
+  }, React.createElement(Field, {
+    label: "Año"
+  }, React.createElement("select", {
+    value: year,
+    onChange: e => setYear(parseInt(e.target.value))
+  }, [CY - 1, CY, CY + 1].map(y => React.createElement("option", {
+    key: y,
+    value: y
+  }, y)))))), msg && React.createElement("p", {
+    style: {
+      fontSize: 13
+    }
+  }, msg), React.createElement("button", {
+    className: "btn-primary",
+    onClick: exportMonth,
+    style: {
+      marginTop: 8
+    }
+  }, "Descargar CSV de ", MN[month], " ", year));
+}
 function CEOApp({
   profile,
   onLogout
@@ -11062,6 +11845,8 @@ function CEOApp({
   const [extraEnrollments, setExtraEnrollments] = useState([]);
   const [withdrawals, setWithdrawals] = useState([]);
   const [allWithdrawals, setAllWithdrawals] = useState([]);
+  const [cancelledSessions, setCancelledSessions] = useState([]);
+  const [overrides, setOverrides] = useState([]);
   const [familyMembers, setFamilyMembers] = useState([]);
   const [recurringExpenses, setRecurringExpenses] = useState([]);
   const [flexPasses, setFlexPasses] = useState([]);
@@ -11078,6 +11863,8 @@ function CEOApp({
       sb.from("student_groups").select("*").then(({data}) => setExtraEnrollments(data || [])),
       sb.from("withdrawal_requests").select("*").eq("status", "pending").then(({data}) => setWithdrawals(data || [])),
       sb.from("withdrawal_requests").select("*").then(({data}) => setAllWithdrawals(data || [])),
+      sb.from("cancelled_sessions").select("*").then(({data}) => setCancelledSessions(data || [])),
+      sb.from("session_teacher_overrides").select("*").then(({data}) => setOverrides(data || [])),
       sb.from("family_members").select("*").then(({data}) => setFamilyMembers(data || [])),
       sb.from("recurring_expenses").select("*").then(({data}) => setRecurringExpenses(data || [])),
       sb.from("flex_passes").select("*").then(({data}) => setFlexPasses(data || [])),
@@ -11094,12 +11881,12 @@ function CEOApp({
     key: "alumnado",
     icon: "◈",
     label: "Alumnado",
-    subtabs: [["groups", "Clases"], ["daily", "Esta semana"], ["students", "Alumnos"], ["stats", "Estadísticas"]]
+    subtabs: [["groups", "Clases"], ["daily", "Esta semana"], ["students", "Alumnos"], ["stats", "Estadísticas"], ["audit", "Auditoría"]]
   }, {
     key: "economico",
     icon: "€",
     label: "Económico",
-    subtabs: [["payments", "Pagos"], ["expenses", "Gastos"], ["historico", "Histórico"]]
+    subtabs: [["payments", "Pagos"], ["expenses", "Gastos"], ["historico", "Histórico"], ["export", "Exportar"]]
   }, {
     key: "profesoras",
     icon: "✎",
@@ -11109,7 +11896,7 @@ function CEOApp({
     key: "otros",
     icon: "◆",
     label: "Otros",
-    subtabs: [["workshops", "Talleres"], ["vouchers", "Bonos"], ["tienda", "Tienda"], ["limpieza", "Limpieza"], ["llaves", "🔑 Llaves"]]
+    subtabs: [["workshops", "Talleres"], ["vouchers", "Bonos"], ["tienda", "Tienda"], ["limpieza", "Limpieza"], ["llaves", "🔑 Llaves"], ["settings", "⚙️ Configuración"]]
   }, {
     key: "condiciones",
     icon: "≡",
@@ -11163,6 +11950,7 @@ function CEOApp({
     familyMembers: familyMembers,
     withdrawals: withdrawals,
     allWithdrawals: allWithdrawals,
+    cancelledSessions: cancelledSessions,
     profile: profile,
     recurringExpenses: recurringExpenses,
     rates: rates,
@@ -11200,6 +11988,12 @@ function CEOApp({
     attendance: attendance,
     extraEnrollments: extraEnrollments,
     familyMembers: familyMembers
+  }), tab === "audit" && React.createElement(DataAuditView, {
+    groups: groups,
+    profiles: profiles,
+    extraEnrollments: extraEnrollments,
+    familyMembers: familyMembers,
+    payments: payments
   }), tab === "teacherpay" && React.createElement(TeacherPayView, {
     groups: groups,
     attendance: attendance,
@@ -11207,13 +12001,19 @@ function CEOApp({
     tiers: tiers,
     profiles: profiles,
     extraEnrollments: extraEnrollments,
-    familyMembers: familyMembers
-  }), tab === "workshops" && React.createElement(WorkshopsView, null), tab === "vouchers" && React.createElement(VouchersView, null), tab === "tienda" && React.createElement(MaterialsShopCEOView, null), tab === "limpieza" && React.createElement(CleaningView, {myName: "Dirección", isCEO: true}), tab === "llaves" && React.createElement(KeyCodeCard, {isCEO: true}), tab === "expenses" && React.createElement(ExpensesView, {
+    familyMembers: familyMembers,
+    cancelledSessions: cancelledSessions,
+    overrides: overrides
+  }), tab === "workshops" && React.createElement(WorkshopsView, null), tab === "vouchers" && React.createElement(VouchersView, null), tab === "tienda" && React.createElement(MaterialsShopCEOView, null), tab === "limpieza" && React.createElement(CleaningView, {myName: "Dirección", isCEO: true}), tab === "llaves" && React.createElement(KeyCodeCard, {isCEO: true}), tab === "settings" && React.createElement(SettingsView, null), tab === "expenses" && React.createElement(ExpensesView, {
     expenses: expenses,
     reload: load
   }), tab === "historico" && React.createElement(HistoricalFinanceView, {
     expenses: expenses,
     payments: payments
+  }), tab === "export" && React.createElement(ExportView, {
+    payments: payments,
+    expenses: expenses,
+    profiles: profiles
   }), tab === "condiciones" && React.createElement(HelpGuide, {role: "ceo"}), tab === "condiciones" && React.createElement(ConditionsAndPricingView, {
     groups: groups
   })), React.createElement(BottomNav, {
